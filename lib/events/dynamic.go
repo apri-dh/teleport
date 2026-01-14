@@ -640,6 +640,18 @@ func FromEventFields(fields EventFields) (events.AuditEvent, error) {
 		CertAuthOverrideUpsertEvent,
 		CertAuthOverrideDeleteEvent:
 		e = &events.CertAuthorityOverrideEvent{}
+	case ScopedTokenCreateEvent:
+		e = &events.ScopedTokenCreate{}
+	case ScopedTokenUpsertEvent:
+		e = &events.ScopedTokenCreate{}
+	case ScopedTokenUpdateEvent:
+		e = &events.ScopedTokenUpdate{}
+	case ScopedTokenDeleteEvent:
+		e = &events.ScopedTokenDelete{}
+	case ScopedTokenUseEvent:
+		e = &events.ScopedTokenUse{}
+	case ScopedTokenFailEvent:
+		e = &events.ScopedTokenFail{}
 
 	default:
 		slog.ErrorContext(context.Background(), "Attempted to convert dynamic event of unknown type into protobuf event.", "event_type", eventType)
