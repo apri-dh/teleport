@@ -1408,25 +1408,27 @@ func TestGetAdminUser(t *testing.T) {
 		},
 		{
 			desc:      "gets admin from spec",
-			specAdmin: &DatabaseAdminUser{Name: "llama", DefaultDatabase: "hill"},
-			want:      DatabaseAdminUser{Name: "llama", DefaultDatabase: "hill"},
+			specAdmin: &DatabaseAdminUser{Name: "llama", DefaultDatabase: "hill", ReassignmentUser: "peru"},
+			want:      DatabaseAdminUser{Name: "llama", DefaultDatabase: "hill", ReassignmentUser: "peru"},
 		},
 		{
 			desc: "gets admin from labels",
 			labels: map[string]string{
-				DatabaseAdminLabel:                "llama",
-				DatabaseAdminDefaultDatabaseLabel: "hill",
+				DatabaseAdminLabel:                 "llama",
+				DatabaseAdminDefaultDatabaseLabel:  "hill",
+				DatabaseAdminReassignmentUserLabel: "peru",
 			},
-			want: DatabaseAdminUser{Name: "llama", DefaultDatabase: "hill"},
+			want: DatabaseAdminUser{Name: "llama", DefaultDatabase: "hill", ReassignmentUser: "peru"},
 		},
 		{
 			desc:      "gets admin from spec ignoring labels",
-			specAdmin: &DatabaseAdminUser{Name: "llama", DefaultDatabase: "hill"},
+			specAdmin: &DatabaseAdminUser{Name: "llama", DefaultDatabase: "hill", ReassignmentUser: "peru"},
 			labels: map[string]string{
-				DatabaseAdminLabel:                "horse",
-				DatabaseAdminDefaultDatabaseLabel: "pasture",
+				DatabaseAdminLabel:                 "horse",
+				DatabaseAdminDefaultDatabaseLabel:  "pasture",
+				DatabaseAdminReassignmentUserLabel: "alberta",
 			},
-			want: DatabaseAdminUser{Name: "llama", DefaultDatabase: "hill"},
+			want: DatabaseAdminUser{Name: "llama", DefaultDatabase: "hill", ReassignmentUser: "peru"},
 		},
 	}
 	for _, test := range tests {

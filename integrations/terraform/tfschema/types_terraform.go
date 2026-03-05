@@ -163,6 +163,11 @@ func GenSchemaDatabaseV3(ctx context.Context) (github_com_hashicorp_terraform_pl
 							Optional:    true,
 							Type:        github_com_hashicorp_terraform_plugin_framework_types.StringType,
 						},
+						"reassignment_user": {
+							Description: "ReassignmentUser is the database user to transfer resource ownership to at the end of a session where the database user was auto-provisioned.  If the role that was used to log into the database has create_db_user_mode set to best_effort_drop, and ReassignmentUser is not empty, Teleport will attempt to reassign all database objects owned by the user to the user specified by ReassignmentUser prior to dropping the logged-in user.  ReassignmentUser is ignored when create_db_user_mode has a value other than best_effort_drop.",
+							Optional:    true,
+							Type:        github_com_hashicorp_terraform_plugin_framework_types.StringType,
+						},
 					}),
 					Description: "AdminUser is the database admin user for automatic user provisioning.",
 					Optional:    true,
@@ -7938,6 +7943,23 @@ func CopyDatabaseV3FromTerraform(_ context.Context, tf github_com_hashicorp_terr
 											}
 										}
 									}
+									{
+										a, ok := tf.Attrs["reassignment_user"]
+										if !ok {
+											diags.Append(attrReadMissingDiag{"DatabaseV3.Spec.AdminUser.ReassignmentUser"})
+										} else {
+											v, ok := a.(github_com_hashicorp_terraform_plugin_framework_types.String)
+											if !ok {
+												diags.Append(attrReadConversionFailureDiag{"DatabaseV3.Spec.AdminUser.ReassignmentUser", "github.com/hashicorp/terraform-plugin-framework/types.String"})
+											} else {
+												var t string
+												if !v.Null && !v.Unknown {
+													t = string(v.Value)
+												}
+												obj.ReassignmentUser = t
+											}
+										}
+									}
 								}
 							}
 						}
@@ -10565,6 +10587,28 @@ func CopyDatabaseV3ToTerraform(ctx context.Context, obj *github_com_gravitationa
 											v.Value = string(obj.DefaultDatabase)
 											v.Unknown = false
 											tf.Attrs["default_database"] = v
+										}
+									}
+									{
+										t, ok := tf.AttrTypes["reassignment_user"]
+										if !ok {
+											diags.Append(attrWriteMissingDiag{"DatabaseV3.Spec.AdminUser.ReassignmentUser"})
+										} else {
+											v, ok := tf.Attrs["reassignment_user"].(github_com_hashicorp_terraform_plugin_framework_types.String)
+											if !ok {
+												i, err := t.ValueFromTerraform(ctx, github_com_hashicorp_terraform_plugin_go_tftypes.NewValue(t.TerraformType(ctx), nil))
+												if err != nil {
+													diags.Append(attrWriteGeneralError{"DatabaseV3.Spec.AdminUser.ReassignmentUser", err})
+												}
+												v, ok = i.(github_com_hashicorp_terraform_plugin_framework_types.String)
+												if !ok {
+													diags.Append(attrWriteConversionFailureDiag{"DatabaseV3.Spec.AdminUser.ReassignmentUser", "github.com/hashicorp/terraform-plugin-framework/types.String"})
+												}
+												v.Null = string(obj.ReassignmentUser) == ""
+											}
+											v.Value = string(obj.ReassignmentUser)
+											v.Unknown = false
+											tf.Attrs["reassignment_user"] = v
 										}
 									}
 								}

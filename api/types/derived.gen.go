@@ -1057,7 +1057,8 @@ func deriveTeleportEqual_56(this, that *DatabaseAdminUser) bool {
 	return (this == nil && that == nil) ||
 		this != nil && that != nil &&
 			this.Name == that.Name &&
-			this.DefaultDatabase == that.DefaultDatabase
+			this.DefaultDatabase == that.DefaultDatabase &&
+			this.ReassignmentUser == that.ReassignmentUser
 }
 
 // deriveTeleportEqual_57 returns whether this and that are equal.

@@ -314,6 +314,9 @@ func (d *DatabaseV3) GetAdminUser() (ret DatabaseAdminUser) {
 	if ret.DefaultDatabase == "" {
 		ret.DefaultDatabase = d.Metadata.Labels[DatabaseAdminDefaultDatabaseLabel]
 	}
+	if ret.ReassignmentUser == "" {
+		ret.ReassignmentUser = d.Metadata.Labels[DatabaseAdminReassignmentUserLabel]
+	}
 	return
 }
 
