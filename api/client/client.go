@@ -4492,31 +4492,67 @@ type ResourcePage[T types.ResourceWithLabels] struct {
 // convertEnrichedResource extracts the resource and any enriched information from the
 // PaginatedResource returned from the rpc ListUnifiedResources.
 func convertEnrichedResource(resource *proto.PaginatedResource) (*types.EnrichedResource, error) {
-	if r := resource.GetNode(); r != nil {
-		return &types.EnrichedResource{ResourceWithLabels: r, Logins: resource.Logins, RequiresRequest: resource.RequiresRequest}, nil
-	} else if r := resource.GetDatabaseServer(); r != nil {
-		return &types.EnrichedResource{ResourceWithLabels: r, RequiresRequest: resource.RequiresRequest}, nil
-	} else if r := resource.GetDatabaseService(); r != nil {
-		return &types.EnrichedResource{ResourceWithLabels: r, RequiresRequest: resource.RequiresRequest}, nil
-	} else if r := resource.GetWindowsDesktop(); r != nil {
-		return &types.EnrichedResource{ResourceWithLabels: r, Logins: resource.Logins, RequiresRequest: resource.RequiresRequest}, nil
-	} else if r := resource.GetWindowsDesktopService(); r != nil {
-		return &types.EnrichedResource{ResourceWithLabels: r, RequiresRequest: resource.RequiresRequest}, nil
-	} else if r := resource.GetKubeCluster(); r != nil {
-		return &types.EnrichedResource{ResourceWithLabels: r, RequiresRequest: resource.RequiresRequest}, nil
-	} else if r := resource.GetKubernetesServer(); r != nil {
-		return &types.EnrichedResource{ResourceWithLabels: r, RequiresRequest: resource.RequiresRequest}, nil
-	} else if r := resource.GetUserGroup(); r != nil {
-		return &types.EnrichedResource{ResourceWithLabels: r, RequiresRequest: resource.RequiresRequest}, nil
-	} else if r := resource.GetAppServer(); r != nil {
-		return &types.EnrichedResource{ResourceWithLabels: r, Logins: resource.Logins, RequiresRequest: resource.RequiresRequest}, nil
-	} else if r := resource.GetSAMLIdPServiceProvider(); r != nil {
-		return &types.EnrichedResource{ResourceWithLabels: r, RequiresRequest: resource.RequiresRequest}, nil
-	} else if r := resource.GetGitServer(); r != nil {
-		return &types.EnrichedResource{ResourceWithLabels: r, RequiresRequest: resource.RequiresRequest}, nil
-	} else {
+	if resource == nil {
+		return nil, trace.BadParameter("resource is nil")
+	}
+	var rwl types.ResourceWithLabels
+	switch r := resource.Resource.(type) {
+	case *proto.PaginatedResource_Node:
+		rwl = r.Node
+	case *proto.PaginatedResource_DatabaseServer:
+		rwl = r.DatabaseServer
+	case *proto.PaginatedResource_DatabaseService:
+		rwl = r.DatabaseService
+	case *proto.PaginatedResource_WindowsDesktop:
+		rwl = r.WindowsDesktop
+	case *proto.PaginatedResource_WindowsDesktopService:
+		rwl = r.WindowsDesktopService
+	case *proto.PaginatedResource_KubeCluster:
+		rwl = r.KubeCluster
+	case *proto.PaginatedResource_KubernetesServer:
+		rwl = r.KubernetesServer
+	case *proto.PaginatedResource_UserGroup:
+		rwl = r.UserGroup
+	case *proto.PaginatedResource_AppServer:
+		rwl = r.AppServer
+	case *proto.PaginatedResource_SAMLIdPServiceProvider:
+		rwl = r.SAMLIdPServiceProvider
+	case *proto.PaginatedResource_GitServer:
+		rwl = r.GitServer
+	case nil:
+		return nil, trace.BadParameter("resource field is empty")
+	default:
 		return nil, trace.BadParameter("received unsupported resource %T", resource.Resource)
 	}
+	if rwl == nil {
+		return nil, trace.BadParameter("resource has nil payload for type %T", resource.Resource)
+	}
+
+	return &types.EnrichedResource{
+		ResourceWithLabels:      rwl,
+		Logins:                  resource.Logins,
+		RequiresRequest:         resource.RequiresRequest,
+		DatabasePrincipalsByRole: protoDatabasePrincipalsByRole(resource.DatabasePrincipalsByRole),
+	}, nil
+}
+
+// protoDatabasePrincipalsByRole converts the proto DatabasePrincipalsByRole map
+// to the corresponding Go type.
+func protoDatabasePrincipalsByRole(pbMap map[string]*proto.DatabaseRolePrincipals) map[string]types.DatabaseRolePrincipals {
+	if len(pbMap) == 0 {
+		return nil
+	}
+	out := make(map[string]types.DatabaseRolePrincipals, len(pbMap))
+	for k, v := range pbMap {
+		if v != nil {
+			out[k] = types.DatabaseRolePrincipals{
+				Users: v.Users,
+				Names: v.Names,
+				Roles: v.Roles,
+			}
+		}
+	}
+	return out
 }
 
 // GetUnifiedResourcePage is a helper for getting a single page of unified resources that match the provided request.
