@@ -30,6 +30,8 @@ export default function ActionMenu(props: Props) {
         color: 'text.slightlyMuted',
         style: { fontSize: '20px' },
         title: 'More actions',
+        // square highlight instead of default circle
+        css: 'border-radius: 0',
       }}
       menuProps={menuProps}
     >

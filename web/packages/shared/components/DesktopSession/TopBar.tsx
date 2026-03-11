@@ -19,8 +19,12 @@
 import { useTheme } from 'styled-components';
 
 import { Flex, Text, TopNav } from 'design';
-import { Clipboard, FolderShared } from 'design/Icon';
+import { Clipboard } from 'design/Icon';
 import { HoverTooltip } from 'design/Tooltip';
+import {
+  DirectoryItem,
+  SharedDirectoryList,
+} from 'shared/components/DesktopSession/DirectoryList';
 import { LatencyDiagnostic } from 'shared/components/LatencyDiagnostic';
 import type { ToastNotificationItem } from 'shared/components/ToastNotification';
 
@@ -34,13 +38,15 @@ export default function TopBar(props: Props) {
     clipboardSharingMessage,
     onDisconnect,
     canShareDirectory,
-    isSharingDirectory,
-    onShareDirectory,
+    onAddSharedDirectory,
     onCtrlAltDel,
     alerts,
+    sharedDirectories,
     onRemoveAlert,
+    onRemoveSharedDirectory,
     isConnected,
     latency,
+    canRemoveSharedDirectory,
   } = props;
   const theme = useTheme();
 
@@ -63,23 +69,21 @@ export default function TopBar(props: Props) {
       {isConnected && (
         <Flex gap={3} alignItems="center">
           {latency && <LatencyDiagnostic latency={latency} />}
-          <HoverTooltip
-            tipContent={directorySharingToolTip(
-              canShareDirectory,
-              isSharingDirectory
-            )}
-            placement="bottom"
-          >
-            <FolderShared style={primaryOnTrue(isSharingDirectory)} />
-          </HoverTooltip>
+          <SharedDirectoryList
+            sharedDirectories={sharedDirectories}
+            onRemoveSharedDirectory={onRemoveSharedDirectory}
+            onAddSharedDirectory={onAddSharedDirectory}
+            canRemoveSharedDirectory={canRemoveSharedDirectory}
+            canSharedDirectories={canShareDirectory}
+          />
           <HoverTooltip tipContent={clipboardSharingMessage} placement="bottom">
             <Clipboard style={primaryOnTrue(isSharingClipboard)} />
           </HoverTooltip>
           <AlertDropdown alerts={alerts} onRemoveAlert={onRemoveAlert} />
           <ActionMenu
+            showShareDirectory={canShareDirectory}
+            onShareDirectory={onAddSharedDirectory}
             onDisconnect={onDisconnect}
-            showShareDirectory={canShareDirectory && !isSharingDirectory}
-            onShareDirectory={onShareDirectory}
             onCtrlAltDel={onCtrlAltDel}
           />
         </Flex>
@@ -88,33 +92,22 @@ export default function TopBar(props: Props) {
   );
 }
 
-function directorySharingToolTip(
-  canShare: boolean,
-  isSharing: boolean
-): string {
-  if (!canShare) {
-    return 'Directory Sharing Disabled';
-  }
-  if (!isSharing) {
-    return 'Directory Sharing Inactive';
-  }
-  return 'Directory Sharing Enabled';
-}
-
 type Props = {
   userHost: string;
   isSharingClipboard: boolean;
   clipboardSharingMessage: string;
   canShareDirectory: boolean;
-  isSharingDirectory: boolean;
   onDisconnect: VoidFunction;
-  onShareDirectory: VoidFunction;
+  onAddSharedDirectory: VoidFunction;
   onCtrlAltDel: VoidFunction;
   alerts: ToastNotificationItem[];
+  sharedDirectories: DirectoryItem[];
   isConnected: boolean;
   onRemoveAlert(id: string): void;
+  onRemoveSharedDirectory(directoryId: number);
   latency: {
     client: number;
     server: number;
   };
+  canRemoveSharedDirectory: boolean;
 };

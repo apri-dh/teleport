@@ -55,8 +55,11 @@ import useDesktopSession, {
   clipboardSharingMessage,
   directorySharingPossible,
   isSharingClipboard,
-  isSharingDirectory,
 } from './useDesktopSession';
+
+export interface ServerCapabilities {
+  canRemoveSharedDirectories: boolean;
+}
 
 export interface DesktopSessionProps {
   client: TdpClient;
@@ -99,11 +102,13 @@ export function DesktopSession({
     onClipboardData,
     sendLocalClipboardToRemote,
     clipboardSharingState,
-    clearSharing,
-    onShareDirectory,
+    sharedDirectoriesState,
+    addSharedDirectory,
+    removeSharedDirectory,
     alerts,
     onRemoveAlert,
     addAlert,
+    connect,
   } = useDesktopSession(client, aclAttempt, browserSupportsSharing);
 
   const [tdpConnectionStatus, setTdpConnectionStatus] =
@@ -143,18 +148,14 @@ export function DesktopSession({
 
   useListener(client.onClipboardData, onClipboardData);
 
-  const handleConnectionClose = useCallback(
-    (error?: Error) => {
-      clearSharing();
-      setTdpConnectionStatus({
-        status: 'disconnected',
-        fromTdpError: error instanceof TdpError,
-        message: error?.message || '',
-      });
-      initialTdpConnectionSucceeded.current = false;
-    },
-    [clearSharing]
-  );
+  const handleConnectionClose = useCallback((error?: Error) => {
+    setTdpConnectionStatus({
+      status: 'disconnected',
+      fromTdpError: error instanceof TdpError,
+      message: error?.message || '',
+    });
+    initialTdpConnectionSucceeded.current = false;
+  }, []);
   useListener(client.onError, handleConnectionClose);
   useListener(client.onTransportClose, handleConnectionClose);
 
@@ -225,6 +226,18 @@ export function DesktopSession({
     }, [])
   );
 
+  const [serverCapabilities, setServerCapabilities] = useState<
+    ServerCapabilities | undefined
+  >({ canRemoveSharedDirectories: false });
+  useListener(
+    client.onServerCapabilities,
+    useCallback(caps => {
+      setServerCapabilities({
+        canRemoveSharedDirectories: caps.directoryRemoval,
+      });
+    }, [])
+  );
+
   const shouldConnect =
     aclAttempt.status === 'success' &&
     anotherDesktopActiveAttempt.status === 'success' &&
@@ -233,12 +246,12 @@ export function DesktopSession({
     if (!shouldConnect) {
       return;
     }
-    client
-      .connect({
-        keyboardLayout,
-        screenSpec: canvasRendererRef.current.getSize(),
-      })
-      .catch(handleConnectionClose);
+
+    connect({
+      keyboardLayout,
+      screenSpec: canvasRendererRef.current.getSize(),
+    }).catch(handleConnectionClose);
+
     return () => {
       client.shutdown();
     };
@@ -392,14 +405,16 @@ export function DesktopSession({
         }}
         userHost={`${username} on ${desktop}`}
         canShareDirectory={directorySharingPossible(directorySharingState)}
-        isSharingDirectory={isSharingDirectory(directorySharingState)}
         isSharingClipboard={isSharingClipboard(clipboardSharingState)}
         clipboardSharingMessage={clipboardSharingMessage(clipboardSharingState)}
-        onShareDirectory={onShareDirectory}
+        onAddSharedDirectory={addSharedDirectory}
         onCtrlAltDel={handleCtrlAltDel}
         alerts={alerts}
+        sharedDirectories={sharedDirectoriesState}
         onRemoveAlert={onRemoveAlert}
+        onRemoveSharedDirectory={removeSharedDirectory}
         latency={latencyStats}
+        canRemoveSharedDirectory={serverCapabilities.canRemoveSharedDirectories}
       />
 
       {/* The UI states below (except the loading indicator) take up space.*/}
