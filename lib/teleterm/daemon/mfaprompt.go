@@ -74,17 +74,10 @@ func (p *mfaPrompt) Run(ctx context.Context, chal *proto.MFAAuthenticateChalleng
 	promptOTP := chal.TOTP != nil
 	promptWebauthn := chal.WebauthnChallenge != nil && p.cfg.WebauthnSupported
 	promptSSO := chal.SSOChallenge != nil && p.cfg.MFACeremony != nil
-	promptBrowser := chal.BrowserMFAChallenge != nil
-
-	// TODO(danielashare): Implement Browser MFA for connect
-	if promptBrowser && !promptOTP && !promptWebauthn && !promptSSO {
-		return nil, trace.AccessDenied(
-			"Browser MFA was the only challenge returned and is not supported in Connect yet",
-		)
-	}
+	promptBrowserMfa := chal.BrowserMFAChallenge != nil && p.cfg.MFACeremony != nil
 
 	// No prompt to run, no-op.
-	if !promptOTP && !promptWebauthn && !promptSSO {
+	if !promptOTP && !promptWebauthn && !promptSSO && !promptBrowserMfa {
 		return &proto.MFAAuthenticateResponse{}, nil
 	}
 
@@ -103,7 +96,7 @@ func (p *mfaPrompt) Run(ctx context.Context, chal *proto.MFAAuthenticateChalleng
 		return resp, trace.Wrap(err)
 	}
 
-	return libmfa.HandleConcurrentMFAPrompts(ctx, chal, appPrompt, p.maybePromptWebauthn, p.maybePromptSSO)
+	return libmfa.HandleConcurrentMFAPrompts(ctx, chal, appPrompt, p.maybePromptWebauthn, p.maybePromptBrowserOrSSO)
 }
 
 // promptApp handles the client modal, cancellation, and TOTP.
@@ -111,6 +104,7 @@ func (p *mfaPrompt) promptApp(ctx context.Context, chal *proto.MFAAuthenticateCh
 	promptOTP := chal.TOTP != nil
 	promptWebauthn := chal.WebauthnChallenge != nil && p.cfg.WebauthnSupported
 	promptSSO := chal.SSOChallenge != nil && p.cfg.MFACeremony != nil
+	promptBrowserMfa := chal.BrowserMFAChallenge != nil && p.cfg.MFACeremony != nil
 	scope := p.cfg.Extensions.GetScope()
 
 	var ssoChallenge *api.SSOChallenge
@@ -123,12 +117,20 @@ func (p *mfaPrompt) promptApp(ctx context.Context, chal *proto.MFAAuthenticateCh
 		}
 	}
 
+	var browserMfaChallenge *mfav1.BrowserMFAChallenge
+	if promptBrowserMfa {
+		browserMfaChallenge = &mfav1.BrowserMFAChallenge{
+			RequestId: chal.BrowserMFAChallenge.RequestId,
+		}
+	}
+
 	resp, err := p.promptAppMFA(ctx, &api.PromptMFARequest{
 		ClusterUri:    p.resourceURI.GetClusterURI().String(),
 		Reason:        p.cfg.PromptReason,
 		Totp:          promptOTP,
 		Webauthn:      promptWebauthn,
 		Sso:           ssoChallenge,
+		Browser:       browserMfaChallenge,
 		PerSessionMfa: scope == mfav1.ChallengeScope_CHALLENGE_SCOPE_USER_SESSION,
 	})
 	if err != nil {
@@ -156,9 +158,9 @@ func (p *mfaPrompt) maybePromptWebauthn(ctx context.Context, chal *proto.MFAAuth
 	return resp, nil
 }
 
-// Prompt SSO if it's a supported method.
-func (p *mfaPrompt) maybePromptSSO(ctx context.Context, chal *proto.MFAAuthenticateChallenge) (*proto.MFAAuthenticateResponse, error) {
-	if chal.SSOChallenge == nil || p.cfg.MFACeremony == nil {
+// Prompt Browser/SSO if it's a supported method.
+func (p *mfaPrompt) maybePromptBrowserOrSSO(ctx context.Context, chal *proto.MFAAuthenticateChallenge) (*proto.MFAAuthenticateResponse, error) {
+	if (chal.SSOChallenge == nil && chal.BrowserMFAChallenge == nil) || p.cfg.MFACeremony == nil {
 		return nil, nil
 	}
 
