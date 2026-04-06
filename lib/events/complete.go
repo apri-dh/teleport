@@ -34,7 +34,6 @@ import (
 	"github.com/gravitational/teleport"
 	"github.com/gravitational/teleport/api/types"
 	"github.com/gravitational/teleport/api/types/events"
-	apievents "github.com/gravitational/teleport/api/types/events"
 	apiutils "github.com/gravitational/teleport/api/utils"
 	"github.com/gravitational/teleport/api/utils/retryutils"
 	"github.com/gravitational/teleport/lib/auth/recordingmetadata"
@@ -168,7 +167,7 @@ func StartNewUploadCompleter(ctx context.Context, cfg UploadCompleterConfig) err
 type UploadCompleter struct {
 	cfg              UploadCompleterConfig
 	log              *slog.Logger
-	reuploadStreamer Streamer
+	reuploadStreamer *ProtoStreamer
 	closeC           chan struct{}
 }
 
@@ -411,7 +410,8 @@ func (u *UploadCompleter) CheckReuploads(ctx context.Context) error {
 		}
 		version, err := u.cfg.Uploader.GetRecordingVersion(ctx, upload.SessionID, upload.ID)
 		if err != nil {
-			return trace.Wrap(err)
+			log.ErrorContext(ctx, "failed to check recording version", "error", err)
+			continue
 		}
 		if version == "" {
 			continue
@@ -431,7 +431,7 @@ func (u *UploadCompleter) CheckReuploads(ctx context.Context) error {
 // TempSessionStreamer is an alternate version of [SessionStreamer] that can stream
 // events from temporary recordings.
 type TempSessionStreamer interface {
-	StreamTempSessionEvents(ctx context.Context, sessionID session.ID, uploadID string, startIndex int64) (chan apievents.AuditEvent, chan error)
+	StreamTempSessionEvents(ctx context.Context, sessionID session.ID, uploadID string, startIndex int64) (chan events.AuditEvent, chan error)
 }
 
 // MergeUpload merges the current recording for a session with a temporary
@@ -440,10 +440,10 @@ type TempSessionStreamer interface {
 func MergeUpload(
 	ctx context.Context,
 	uploadStreamer TempSessionStreamer,
-	streamer Streamer,
+	streamer *ProtoStreamer,
 	upload StreamUpload,
 ) (err error) {
-	stream, err := streamer.ResumeAuditStream(ctx, upload.SessionID, upload.ID)
+	stream, err := streamer.CreateOverwriteAuditStream(ctx, upload.SessionID)
 	if err != nil {
 		return trace.Wrap(err)
 	}
@@ -460,8 +460,8 @@ func MergeUpload(
 	ctx, cancel := context.WithCancel(ctx)
 	defer cancel()
 	type fetchedEvents struct {
-		current  apievents.AuditEvent
-		incoming apievents.AuditEvent
+		current  events.AuditEvent
+		incoming events.AuditEvent
 	}
 	fetchEvents := func(previous fetchedEvents) chan fetchedEvents {
 		// Fetch event from one or both streams concurrently.
@@ -513,7 +513,7 @@ func MergeUpload(
 			return trace.Wrap(stream.Complete(ctx))
 		}
 
-		var nextEvent apievents.AuditEvent
+		var nextEvent events.AuditEvent
 		switch {
 		// There are no incoming events, or the current event is next by index.
 		case nextEvents.incoming == nil || (nextEvents.current != nil && nextEvents.current.GetIndex() < nextEvents.incoming.GetIndex()):
