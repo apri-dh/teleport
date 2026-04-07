@@ -125,7 +125,7 @@ func testNetworkingCommand(t *testing.T, login string) {
 	require.NoError(t, err)
 	proc, stderr, err := networking.NewProcess(ctx, command)
 	require.NoError(t, err)
-	require.Nil(t, stderr)
+	require.Empty(t, stderr)
 	t.Cleanup(func() { proc.Close() })
 
 	t.Run("local port forward", func(t *testing.T) {
