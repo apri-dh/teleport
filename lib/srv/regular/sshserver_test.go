@@ -691,15 +691,15 @@ func TestX11AuditLog(t *testing.T) {
 		return nil
 	}
 
-	testX11Audit := func(t *testing.T, clientConfig *ssh.ClientConfig, assertX11Event func(t require.TestingT, e *apievents.X11Forward)) {
+	testX11Audit := func(t *testing.T, clientConfig apissh.ClientConfig, assertX11Event func(t require.TestingT, e *apievents.X11Forward)) {
 		t.Helper()
 
-		if clientConfig == nil {
+		if clientConfig.IsEmpty() {
 			clientConfig = f.ssh.cltConfig
 		}
 
 		// Start a new session
-		newClient, err := tracessh.Dial(ctx, "tcp", f.ssh.srvAddress, clientConfig)
+		newClient, err := apissh.Dial(ctx, "tcp", f.ssh.srvAddress, clientConfig)
 		require.NoError(t, err)
 		sess, err := newClient.NewSession(ctx)
 		require.NoError(t, err)
@@ -721,7 +721,7 @@ func TestX11AuditLog(t *testing.T) {
 	}
 
 	t.Run("success", func(t *testing.T) {
-		testX11Audit(t, nil, func(t require.TestingT, e *apievents.X11Forward) {
+		testX11Audit(t, apissh.ClientConfig{}, func(t require.TestingT, e *apievents.X11Forward) {
 			require.Equal(t, events.X11ForwardCode, e.GetCode(), "expected X11 forward code")
 			require.True(t, e.Status.Success)
 			require.Empty(t, e.Status.Error)
@@ -732,9 +732,13 @@ func TestX11AuditLog(t *testing.T) {
 		missingLogin := "missing-login"
 		up, err := newUpack(t.Context(), f.testSrv, "x11-audit-missing-login", []string{missingLogin}, wildcardAllow)
 		require.NoError(t, err)
-		sshConfig := &ssh.ClientConfig{
-			User:            missingLogin,
-			Auth:            []ssh.AuthMethod{ssh.PublicKeys(up.certSigner)},
+		sshConfig := apissh.ClientConfig{
+			User: missingLogin,
+			PublicKeyAuth: apissh.PublicKeyAuthConfig{
+				Signers: func() ([]ssh.Signer, error) {
+					return []ssh.Signer{up.certSigner}, nil
+				},
+			},
 			HostKeyCallback: ssh.FixedHostKey(f.signer.PublicKey()),
 		}
 
@@ -757,7 +761,7 @@ func TestX11AuditLog(t *testing.T) {
 	require.NoError(t, err)
 
 	t.Run("not permitted", func(t *testing.T) {
-		testX11Audit(t, nil, func(t require.TestingT, e *apievents.X11Forward) {
+		testX11Audit(t, apissh.ClientConfig{}, func(t require.TestingT, e *apievents.X11Forward) {
 			require.Equal(t, events.X11ForwardFailureCode, e.GetCode(), "expected X11 forward failure code")
 			require.False(t, e.Status.Success)
 			require.Equal(t, "X11 forwarding not permitted", e.Status.Error)
