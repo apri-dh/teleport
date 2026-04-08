@@ -25,6 +25,5 @@ import (
 type BeginBrowserMFAChallengeParams struct {
 	User                     string
 	BrowserMFATSHRedirectURL string
-	ProxyAddress             string
 	Ext                      *mfav1.ChallengeExtensions
 }
