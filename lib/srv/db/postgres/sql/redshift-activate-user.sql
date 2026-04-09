@@ -1,10 +1,14 @@
-CREATE OR REPLACE PROCEDURE teleport_activate_user(username varchar, roles text)
+CREATE OR REPLACE PROCEDURE teleport_activate_user(username varchar, admin_user varchar, reassignment_user varchar, roles text)
 LANGUAGE plpgsql
 AS $$
 DECLARE
     roles_length integer;
     cur_roles_length integer;
 BEGIN
+    -- Note: reassignment_user and admin_user are not used because redshift does
+    -- not support REASSIGN OWNED BY. They are here because redshift and postgres
+    -- are called via the same procedure, so they are required to avoid errors.
+
     roles_length := JSON_ARRAY_LENGTH(roles);
 
     -- If the user already exists and was provisioned by Teleport, reactivate

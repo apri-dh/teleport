@@ -1,4 +1,4 @@
-CREATE OR REPLACE PROCEDURE pg_temp.teleport_activate_user(username varchar, roles varchar[])
+CREATE OR REPLACE PROCEDURE pg_temp.teleport_activate_user(username varchar, admin_user varchar, reassignment_user varchar, roles varchar[])
 LANGUAGE plpgsql
 AS $$
 DECLARE
@@ -35,4 +35,11 @@ BEGIN
     LOOP
         EXECUTE FORMAT('GRANT %I TO %I', role_, username);
     END LOOP;
+    -- If reassignment user is set, both reassignment_user and admin_user must be
+    -- members of the auto-provisioned user for REASSIGN OWNED BY to work, if they
+    -- are not superusers.
+    IF reassignment_user != '' THEN
+        EXECUTE FORMAT('GRANT %I TO %I', username, admin_user);
+        EXECUTE FORMAT('GRANT %I TO %I', username, reassignment_user);
+    END IF;
 END;$$;

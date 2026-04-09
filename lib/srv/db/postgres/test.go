@@ -589,7 +589,7 @@ func (s *TestServer) handleActivateUser(client *pgproto3.Backend) error {
 	// Respond to Parse message.
 	err = s.sendMessages(client,
 		&pgproto3.ParseComplete{},
-		&pgproto3.ParameterDescription{ParameterOIDs: []uint32{pgtype.VarcharOID, pgtype.VarcharArrayOID}},
+		&pgproto3.ParameterDescription{ParameterOIDs: []uint32{pgtype.VarcharOID, pgtype.VarcharOID, pgtype.VarcharOID, pgtype.VarcharArrayOID}},
 		&pgproto3.NoData{},
 		&pgproto3.ReadyForQuery{})
 	if err != nil {
@@ -605,8 +605,18 @@ func (s *TestServer) handleActivateUser(client *pgproto3.Backend) error {
 	if err != nil {
 		return trace.Wrap(err)
 	}
+	// Extract admin_user.
+	admin_user, err := getVarchar(bind.ParameterFormatCodes[1], bind.Parameters[1])
+	if err != nil {
+		return trace.Wrap(err)
+	}
+	// Extract reassignment_user.
+	reassignment_user, err := getVarchar(bind.ParameterFormatCodes[2], bind.Parameters[2])
+	if err != nil {
+		return trace.Wrap(err)
+	}
 	// Extract role names.
-	roles, err := getVarcharArray(bind.ParameterFormatCodes[1], bind.Parameters[1])
+	roles, err := getVarcharArray(bind.ParameterFormatCodes[3], bind.Parameters[3])
 	if err != nil {
 		return trace.Wrap(err)
 	}
@@ -630,7 +640,7 @@ func (s *TestServer) handleActivateUser(client *pgproto3.Backend) error {
 		return trace.Wrap(err)
 	}
 	// Mark the user as active.
-	s.log.DebugContext(context.Background(), "Activated user.", "user", name, "roles", roles)
+	s.log.DebugContext(context.Background(), "Activated user.", "user", name, "admin_user", admin_user, "reassignment_user", reassignment_user, "roles", roles)
 	s.userEventsCh <- UserEvent{Name: name, Roles: roles, Active: true}
 	s.allowedUsers.Store(name, struct{}{})
 	return nil
@@ -647,10 +657,14 @@ func (s *TestServer) handleDeactivateUser(client *pgproto3.Backend, sendDeleteRe
 	if err != nil {
 		return trace.Wrap(err)
 	}
+	parameterOIDs := []uint32{pgtype.VarcharOID}
+	if sendDeleteResponse {
+		parameterOIDs = []uint32{pgtype.VarcharOID, pgtype.VarcharOID}
+	}
 	// Respond to Parse message.
 	err = s.sendMessages(client,
 		&pgproto3.ParseComplete{},
-		&pgproto3.ParameterDescription{ParameterOIDs: []uint32{pgtype.VarcharOID}},
+		&pgproto3.ParameterDescription{ParameterOIDs: parameterOIDs},
 		&pgproto3.NoData{},
 		&pgproto3.ReadyForQuery{})
 	if err != nil {
@@ -665,6 +679,14 @@ func (s *TestServer) handleDeactivateUser(client *pgproto3.Backend, sendDeleteRe
 	name, err := getVarchar(bind.ParameterFormatCodes[0], bind.Parameters[0])
 	if err != nil {
 		return trace.Wrap(err)
+	}
+	// Extract reassignment_user for delete operations (second parameter).
+	if sendDeleteResponse && len(bind.Parameters) > 1 {
+		// We receive reassignment_user but don't need to do anything with it in the mock.
+		_, err := getVarchar(bind.ParameterFormatCodes[1], bind.Parameters[1])
+		if err != nil {
+			return trace.Wrap(err)
+		}
 	}
 	// Expect Execute message.
 	_, err = s.receiveExecuteMessage(client)

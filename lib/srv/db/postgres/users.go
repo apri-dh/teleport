@@ -94,8 +94,10 @@ func (e *Engine) ActivateUser(ctx context.Context, sessionCtx *common.Session) e
 	}
 
 	logger.InfoContext(ctx, "Activating PostgreSQL user", "roles", roles)
+	adminUser := sessionCtx.Database.GetAdminUser()
 	err = withRetry(ctx, logger, func() error {
-		return trace.Wrap(e.callProcedure(ctx, sessionCtx, conn, activateProcName, sessionCtx.DatabaseUser, roles))
+		return trace.Wrap(e.callProcedure(ctx, sessionCtx, conn, activateProcName,
+			sessionCtx.DatabaseUser, adminUser.Name, adminUser.ReassignmentUser, roles))
 	})
 	if err != nil {
 		logger.DebugContext(ctx, "Call teleport_activate_user failed.", "error", err)
@@ -378,7 +380,13 @@ func (e *Engine) DeleteUser(ctx context.Context, sessionCtx *common.Session) err
 			if err != nil {
 				return trace.Wrap(err)
 			}
-			return trace.Wrap(conn.QueryRow(ctx, deleteQuery, sessionCtx.DatabaseUser).Scan(&state))
+			row := conn.QueryRow(
+				ctx,
+				deleteQuery,
+				sessionCtx.DatabaseUser,
+				sessionCtx.Database.GetAdminUser().ReassignmentUser,
+			)
+			return trace.Wrap(row.Scan(&state))
 		}
 	})
 	if err != nil {
@@ -407,7 +415,10 @@ func (e *Engine) DeleteUser(ctx context.Context, sessionCtx *common.Session) err
 // into the returned error instead of doing this on state returned (like regular
 // PostgreSQL).
 func (e *Engine) deleteUserRedshift(ctx context.Context, sessionCtx *common.Session, conn *pgx.Conn, state *string) error {
-	err := e.callProcedure(ctx, sessionCtx, conn, deleteProcName, sessionCtx.DatabaseUser)
+	err := e.callProcedure(ctx, sessionCtx, conn, deleteProcName,
+		sessionCtx.DatabaseUser,
+		sessionCtx.Database.GetAdminUser().ReassignmentUser,
+	)
 	if err == nil {
 		*state = common.SQLStateUserDropped
 		return nil
@@ -603,7 +614,7 @@ var (
 	activateProc string
 	// activateProcCall contains the procedure name and arguments used to call
 	// the activate user procedure.
-	activateProcCall = fmt.Sprintf(`%v($1, $2)`, activateProcName)
+	activateProcCall = fmt.Sprintf(`%v($1, $2, $3, $4)`, activateProcName)
 
 	//go:embed sql/deactivate-user.sql
 	deactivateProc string
@@ -615,7 +626,7 @@ var (
 	deleteProc string
 	// deleteProcCall contains the procedure name and arguments used to call
 	// the delete user procedure.
-	deleteProcCall = fmt.Sprintf(`%v($1)`, deleteProcName)
+	deleteProcCall = fmt.Sprintf(`%v($1, $2)`, deleteProcName)
 
 	//go:embed sql/redshift-activate-user.sql
 	redshiftActivateProc string
