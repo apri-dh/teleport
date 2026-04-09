@@ -435,7 +435,11 @@ func TestMakeDatabaseHiddenLabels(t *testing.T) {
 	}
 
 	accessChecker := services.NewAccessCheckerWithRoleSet(&services.AccessInfo{}, "clusterName", nil)
-	outputDb := MakeDatabase(inputDb, accessChecker, &mockDatabaseInteractiveChecker{}, false)
+	outputDb := MakeDatabase(inputDb, MakeDatabaseConfig{
+		AccessChecker:      accessChecker,
+		InteractiveChecker: &mockDatabaseInteractiveChecker{},
+		RequiresRequest:    false,
+	})
 
 	require.Equal(t, []ui.Label{
 		{
@@ -690,7 +694,11 @@ func TestMakeDatabaseSupportsInteractive(t *testing.T) {
 	} {
 		t.Run(name, func(t *testing.T) {
 			interactiveChecker := &mockDatabaseInteractiveChecker{supports: tc.supports}
-			single := MakeDatabase(db, accessChecker, interactiveChecker, false)
+			single := MakeDatabase(db, MakeDatabaseConfig{
+				AccessChecker:      accessChecker,
+				InteractiveChecker: interactiveChecker,
+				RequiresRequest:    false,
+			})
 			require.Equal(t, tc.supports, single.SupportsInteractive)
 
 			multi := MakeDatabases([]*types.DatabaseV3{db}, accessChecker, interactiveChecker)
@@ -830,7 +838,11 @@ func TestMakeDatabaseConnectOptions(t *testing.T) {
 	} {
 		t.Run(name, func(t *testing.T) {
 			accessChecker := services.NewAccessCheckerWithRoleSet(&services.AccessInfo{Username: tc.username}, "clusterName", tc.roles)
-			single := MakeDatabase(tc.db, accessChecker, interactiveChecker, false)
+			single := MakeDatabase(tc.db, MakeDatabaseConfig{
+				AccessChecker:      accessChecker,
+				InteractiveChecker: interactiveChecker,
+				RequiresRequest:    false,
+			})
 			tc.assertResult(t, single)
 
 			multi := MakeDatabases([]*types.DatabaseV3{tc.db}, accessChecker, interactiveChecker)
