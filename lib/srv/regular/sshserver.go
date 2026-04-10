@@ -72,7 +72,7 @@ import (
 	"github.com/gravitational/teleport/lib/srv/ingress"
 	"github.com/gravitational/teleport/lib/sshagent"
 	"github.com/gravitational/teleport/lib/sshutils"
-	"github.com/gravitational/teleport/lib/sshutils/reexec"
+	reexecutils "github.com/gravitational/teleport/lib/sshutils/reexec"
 	"github.com/gravitational/teleport/lib/utils"
 	"github.com/gravitational/teleport/session/networking"
 	"github.com/gravitational/teleport/session/networking/x11"
@@ -1328,7 +1328,7 @@ func (s *Server) startNetworkingProcess(ctx context.Context, scx *srv.ServerCont
 
 		// If the networking process failed with an error message from stderr, prefer
 		// that over the other error.
-		childErr = reexec.ChildErrorWithContext(childErr, &reexec.ErrorContext{
+		childErr = reexecutils.ChildErrorWithContext(childErr, &reexecutils.ErrorContext{
 			DecisionContext: scx.Identity.AccessPermit.DecisionContext,
 			Login:           scx.Identity.Login,
 		})

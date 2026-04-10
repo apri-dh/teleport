@@ -29,6 +29,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"os"
+	"os/exec"
 	"os/user"
 	"path/filepath"
 	"syscall"

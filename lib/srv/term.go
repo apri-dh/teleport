@@ -40,7 +40,7 @@ import (
 	"github.com/gravitational/teleport"
 	tracessh "github.com/gravitational/teleport/api/observability/tracing/ssh"
 	rsession "github.com/gravitational/teleport/lib/session"
-	"github.com/gravitational/teleport/lib/sshutils/reexec"
+	reexecutils "github.com/gravitational/teleport/lib/sshutils/reexec"
 	"github.com/gravitational/teleport/session/reexec/reexecconstants"
 )
 
@@ -236,7 +236,7 @@ func (t *terminal) Run(ctx context.Context, errorWriter io.Writer) error {
 	t.waitForOutputStreams.Go(func() {
 		defer stderrR.Close()
 
-		childErr, err := reexec.ReadChildErrorWithContext(stderrR, &reexec.ErrorContext{
+		childErr, err := reexecutils.ReadChildErrorWithContext(stderrR, &reexecutils.ErrorContext{
 			DecisionContext: t.serverContext.Identity.AccessPermit.DecisionContext,
 			Login:           t.serverContext.Identity.Login,
 		})

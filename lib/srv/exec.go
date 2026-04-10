@@ -42,9 +42,9 @@ import (
 	tracessh "github.com/gravitational/teleport/api/observability/tracing/ssh"
 	apievents "github.com/gravitational/teleport/api/types/events"
 	"github.com/gravitational/teleport/lib/events"
-	"github.com/gravitational/teleport/lib/sshutils/reexec"
+	reexecutils "github.com/gravitational/teleport/lib/sshutils/reexec"
 	"github.com/gravitational/teleport/session/envutils"
-	sessionreexec "github.com/gravitational/teleport/session/reexec"
+	"github.com/gravitational/teleport/session/reexec"
 	"github.com/gravitational/teleport/session/reexec/reexecconstants"
 )
 
@@ -196,7 +196,7 @@ func (e *localExec) Start(ctx context.Context, channel ssh.Channel) (*ExecResult
 	e.waitForOutputStreams.Go(func() {
 		defer stderrR.Close()
 
-		childErr, err := reexec.ReadChildErrorWithContext(stderrR, &reexec.ErrorContext{
+		childErr, err := reexecutils.ReadChildErrorWithContext(stderrR, &reexecutils.ErrorContext{
 			DecisionContext: e.Ctx.Identity.AccessPermit.DecisionContext,
 			Login:           e.Ctx.Identity.Login,
 		})
@@ -709,14 +709,14 @@ func ConfigureCommand(ctx *ServerContext, extraFiles ...*os.File) (*exec.Cmd, er
 	}
 
 	// Perform OS-specific tweaks to the command.
-	sessionreexec.CommandOSTweaks(cmd)
+	reexec.CommandOSTweaks(cmd)
 
 	return cmd, nil
 }
 
 // copyCommand will copy the provided command to the child process over the
 // pipe attached to the context.
-func copyCommand(ctx context.Context, cmdw *os.File, cmdmsg *sessionreexec.ExecCommand) {
+func copyCommand(ctx context.Context, cmdw *os.File, cmdmsg *reexec.ExecCommand) {
 	defer func() {
 		err := cmdw.Close()
 		if err != nil {
