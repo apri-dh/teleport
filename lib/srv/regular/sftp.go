@@ -39,7 +39,7 @@ import (
 	apievents "github.com/gravitational/teleport/api/types/events"
 	"github.com/gravitational/teleport/lib/events"
 	"github.com/gravitational/teleport/lib/srv"
-	reexecutils "github.com/gravitational/teleport/lib/sshutils/reexec"
+	"github.com/gravitational/teleport/lib/sshutils/reexec"
 	"github.com/gravitational/teleport/lib/utils"
 	"github.com/gravitational/teleport/session/reexec/reexecconstants"
 )
@@ -136,7 +136,7 @@ func (s *sftpSubsys) Start(ctx context.Context,
 	s.waitForOutputStreams.Go(func() {
 		defer stderrR.Close()
 
-		childErr, err := reexecutils.ReadChildErrorWithContext(stderrR, &reexecutils.ErrorContext{
+		childErr, err := reexec.ReadChildErrorWithContext(stderrR, &reexec.ErrorContext{
 			DecisionContext: s.serverCtx.Identity.AccessPermit.DecisionContext,
 			Login:           s.serverCtx.Identity.Login,
 		})
