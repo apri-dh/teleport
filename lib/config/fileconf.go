@@ -3114,7 +3114,7 @@ type JamfService struct {
 // entry.
 // Corresponds to [types.JamfInventoryEntry].
 type JamfInventoryEntry struct {
-	// FilterRSQL is a Jamf Pro API RSQL filter string.
+	// FilterRSQL is a Jamf Pro API RSQL filter string for computers.
 	FilterRSQL string `yaml:"filter_rsql,omitempty"`
 	// SyncPeriodPartial is the period for PARTIAL syncs.
 	// Zero means "server default", negative means "disabled".
@@ -3128,6 +3128,16 @@ type JamfInventoryEntry struct {
 	// Custom page size for inventory queries.
 	// A server default is used if zeroed or negative.
 	PageSize int32 `yaml:"page_size,omitempty"`
+	// DeviceTypes is the list of Jamf device types to sync.
+	// Valid values are "computers" and "mobile_devices".
+	// If empty, defaults to ["computers"].
+	DeviceTypes []string `yaml:"device_types,omitempty"`
+	// FilterRSQLMobileDevices is the RSQL filter for mobile device queries.
+	// Separate from FilterRSQL because the two APIs have different filterable
+	// fields.
+	// Defaults to "managed==true" if empty and "mobile_devices" is in
+	// DeviceTypes.
+	FilterRSQLMobileDevices string `yaml:"filter_rsql_mobile_devices,omitempty"`
 }
 
 func (j *JamfService) toJamfSpecV1() (*types.JamfSpecV1, error) {
@@ -3142,11 +3152,13 @@ func (j *JamfService) toJamfSpecV1() (*types.JamfSpecV1, error) {
 	inventory := make([]*types.JamfInventoryEntry, len(j.Inventory))
 	for i, e := range j.Inventory {
 		inventory[i] = &types.JamfInventoryEntry{
-			FilterRsql:        e.FilterRSQL,
-			SyncPeriodPartial: types.Duration(e.SyncPeriodPartial),
-			SyncPeriodFull:    types.Duration(e.SyncPeriodFull),
-			OnMissing:         e.OnMissing,
-			PageSize:          e.PageSize,
+			FilterRsql:              e.FilterRSQL,
+			SyncPeriodPartial:       types.Duration(e.SyncPeriodPartial),
+			SyncPeriodFull:          types.Duration(e.SyncPeriodFull),
+			OnMissing:               e.OnMissing,
+			PageSize:                e.PageSize,
+			DeviceTypes:             e.DeviceTypes,
+			FilterRsqlMobileDevices: e.FilterRSQLMobileDevices,
 		}
 	}
 	spec := &types.JamfSpecV1{
