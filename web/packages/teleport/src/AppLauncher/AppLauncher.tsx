@@ -42,7 +42,7 @@ export function AppLauncher({
   const clusterId = pathParams.clusterId;
   const publicAddr = pathParams.publicAddr;
   const arn = pathParams.arn;
-  const { search } = useLocation();
+  const { search, hash } = useLocation();
 
   const mfa = useMfa({
     req: {
@@ -56,7 +56,7 @@ export function AppLauncher({
       },
     },
   });
-  const launchKey = `${fqdn}|${clusterId || ''}|${publicAddr || ''}|${arn || ''}|${search}`;
+  const launchKey = `${fqdn}|${clusterId || ''}|${publicAddr || ''}|${arn || ''}|${search}|${hash}`;
   const latestRunKeyRef = useRef<string>('');
 
   useEffect(() => {
@@ -108,6 +108,10 @@ export function AppLauncher({
 
           if (queryParams.has('query')) {
             path += '?' + queryParams.get('query');
+          }
+
+          if (hash && !path.includes('#')) {
+            path += hash;
           }
         }
 
@@ -193,6 +197,7 @@ export function AppLauncher({
     arn,
     clusterId,
     fqdn,
+    hash,
     launchKey,
     mfa,
     publicAddr,

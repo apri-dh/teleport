@@ -75,6 +75,27 @@ const launcherPathTestCases: {
     expectedPath:
       'x-teleport-auth?state=ABC&subject=subject-cookie-value&path=%2Ffoo%2Fbar#value=cookie-value',
   },
+  {
+    name: 'no state with root path and fragment',
+    path: '?path=%2F#my-section',
+    expectedPath: 'x-teleport-auth?path=%2F%23my-section',
+  },
+  {
+    name: 'no state with path and fragment',
+    path: '?path=%2Ffoo%2Fbar#my-section',
+    expectedPath: 'x-teleport-auth?path=%2Ffoo%2Fbar%23my-section',
+  },
+  {
+    name: 'no state with path, query, and fragment',
+    path: '?path=%2Ffoo%2Fbar&query=q%3Dv#my-section',
+    expectedPath: 'x-teleport-auth?path=%2Ffoo%2Fbar%3Fq%3Dv%23my-section',
+  },
+  {
+    name: 'with state, path, and fragment',
+    path: '?state=ABC&path=%2Ffoo%2Fbar%23my-section',
+    expectedPath:
+      'x-teleport-auth?state=ABC&subject=subject-cookie-value&path=%2Ffoo%2Fbar%23my-section#value=cookie-value',
+  },
 ];
 
 describe('app launcher path is properly formed', () => {
