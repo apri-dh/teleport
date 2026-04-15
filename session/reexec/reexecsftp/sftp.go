@@ -231,7 +231,13 @@ func (s *sftpHandler) openFile(req *sftp.Request) (sftp.WriterAtReaderAt, error)
 		return nil, err
 	}
 
-	f, err := os.OpenFile(req.Filepath, sftputils.ParseFlags(req), 0o644)
+	dir, filename := path.Split(req.Filepath)
+	root, err := os.OpenRoot(dir)
+	if err != nil {
+		return nil, err
+	}
+	defer root.Close()
+	f, err := root.OpenFile(filename, sftputils.ParseFlags(req), 0o644)
 	if err != nil {
 		return nil, err
 	}
