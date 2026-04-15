@@ -110,6 +110,14 @@ export function AppLauncher({
             path += '?' + queryParams.get('query');
           }
 
+          // Append the browser's fragment if one is present. On the first
+          // redirect leg the browser keeps the fragment in location.hash
+          // (fragments are never sent to the server), so hash is non-empty
+          // and we append it. On the second leg the fragment was already
+          // encoded as %23 inside the path query parameter, so hash is
+          // empty and the condition short-circuits without appending. The
+          // path.includes('#') check is a secondary guard for the unlikely
+          // case where a real fragment coexists with a decoded # in path.
           if (hash && !path.includes('#')) {
             path += hash;
           }
