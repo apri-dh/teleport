@@ -769,6 +769,9 @@ Codes:
   * Special case of upsert: deleted certificate
 * `TCO04I` - CertAuthorityOverrideDeleteCode
 
+TODO: Document WindowsDesktopSessionStart proto changes.
+See https://github.com/gravitational/teleport/pull/65862.
+
 ## Observability
 
 Automated metrics are used around the new RPCs.
