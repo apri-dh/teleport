@@ -31,6 +31,7 @@ import (
 	"path/filepath"
 	"strings"
 	"sync"
+	"syscall"
 	"time"
 
 	"github.com/gravitational/trace"
@@ -230,27 +231,14 @@ func (s *sftpHandler) openFile(req *sftp.Request) (sftp.WriterAtReaderAt, error)
 	if err := s.ensureReqIsAllowed(req); err != nil {
 		return nil, err
 	}
-
-	var f *os.File
+	flags := sftputils.ParseFlags(req)
+	// Files in moderated sessions may not include symlinks.
 	if s.allowed != nil {
-		// For moderated sessions, open in a root to minimize unexpected symlink
-		// traversals.
-		dir, filename := path.Split(req.Filepath)
-		root, err := os.OpenRoot(dir)
-		if err != nil {
-			return nil, err
-		}
-		defer root.Close()
-		f, err = root.OpenFile(filename, sftputils.ParseFlags(req), 0o644)
-		if err != nil {
-			return nil, err
-		}
-	} else {
-		var err error
-		f, err = os.OpenFile(req.Filepath, sftputils.ParseFlags(req), 0o644)
-		if err != nil {
-			return nil, err
-		}
+		flags |= syscall.O_NOFOLLOW
+	}
+	f, err := os.OpenFile(req.Filepath, flags, 0o644)
+	if err != nil {
+		return nil, err
 	}
 
 	trackFile := &sftputils.TrackedFile{File: f}

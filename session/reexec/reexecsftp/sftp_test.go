@@ -14,7 +14,7 @@
 // You should have received a copy of the GNU Affero General Public License
 // along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
-package common
+package reexecsftp
 
 import (
 	"os"
@@ -25,7 +25,7 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
-	sftputils "github.com/gravitational/teleport/lib/sshutils/sftp"
+	"github.com/gravitational/teleport/session/sftputils"
 )
 
 func TestEvalSymlinks(t *testing.T) {
