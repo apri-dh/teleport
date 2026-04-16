@@ -28,7 +28,6 @@ import (
 	"os"
 	"os/user"
 	"path"
-	"path/filepath"
 	"strings"
 	"sync"
 	"syscall"
@@ -108,43 +107,6 @@ func newSFTPHandler(logger *slog.Logger, req *FileTransferRequest, events chan<-
 	}, nil
 }
 
-// evalSymlinks evaluates symlinks in a path. Unlike [filepath.EvalSymlinks],
-// it is okay if the file at the end does not exist, as it may be created soon.
-// The returned path is not localized.
-func evalSymlinks(p string) (string, error) {
-	p = filepath.ToSlash(p)
-	dir, file := path.Split(p)
-	resolvedDir, err := filepath.EvalSymlinks(dir)
-	if err != nil {
-		return "", trace.ConvertSystemError(err)
-	}
-	// Work with path package compatible paths as much as possible.
-	resolvedDir = filepath.ToSlash(resolvedDir)
-	linkInfo, err := os.Lstat(p)
-	if err != nil {
-		osErr := trace.ConvertSystemError(err)
-		if trace.IsNotFound(err) {
-			// File does not exist and is not a symlink, but the path is valid.
-			return path.Join(resolvedDir, file), nil
-		}
-		return "", osErr
-	}
-	if linkInfo.Mode()&os.ModeSymlink == 0 {
-		// File is not a symlink, return the resolved parent + file.
-		return path.Join(resolvedDir, file), nil
-	}
-	// File is a symlink, resolve its target.
-	linkTarget, err := os.Readlink(p)
-	if err != nil {
-		return "", trace.ConvertSystemError(err)
-	}
-	linkTarget = filepath.ToSlash(linkTarget)
-	if path.IsAbs(linkTarget) {
-		return linkTarget, nil
-	}
-	return path.Join(resolvedDir, linkTarget), nil
-}
-
 // ensureReqIsAllowed returns an error if the SFTP request isn't
 // allowed based on the approved file transfer request for this session.
 func (s *sftpHandler) ensureReqIsAllowed(req *sftp.Request) error {
@@ -156,13 +118,6 @@ func (s *sftpHandler) ensureReqIsAllowed(req *sftp.Request) error {
 	cleaned := path.Clean(req.Filepath)
 	if s.allowed.path != cleaned {
 		return trace.Errorf("operations are only allowed on %s, not %s", s.allowed.path, cleaned)
-	}
-	resolvedPath, err := evalSymlinks(cleaned)
-	if err != nil {
-		return trace.Wrap(err)
-	}
-	if s.allowed.path != resolvedPath {
-		return trace.Errorf("following symlinks is not allowed for moderated file transfers, request the resolved path instead")
 	}
 
 	switch req.Method {
@@ -238,6 +193,10 @@ func (s *sftpHandler) openFile(req *sftp.Request) (sftp.WriterAtReaderAt, error)
 	}
 	f, err := os.OpenFile(req.Filepath, flags, 0o644)
 	if err != nil {
+		// Symlink traversal is not allowed for moderated file transfers.
+		if s.allowed != nil && strings.Contains(err.Error(), "too many levels of symbolic links") {
+			return nil, trace.Errorf("following symlinks is not allowed for moderated file transfers, request the resolved path instead")
+		}
 		return nil, err
 	}
 

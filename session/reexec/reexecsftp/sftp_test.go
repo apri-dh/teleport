@@ -17,6 +17,7 @@
 package reexecsftp
 
 import (
+	"io"
 	"os"
 	"path/filepath"
 	"testing"
@@ -28,86 +29,9 @@ import (
 	"github.com/gravitational/teleport/session/sftputils"
 )
 
-func TestEvalSymlinks(t *testing.T) {
-	t.Parallel()
-	tempDir := t.TempDir()
-	tempRoot, err := filepath.EvalSymlinks(tempDir)
-	require.NoError(t, err)
-	subDir := filepath.Join(tempRoot, "foo")
-	require.NoError(t, os.Mkdir(subDir, 0o700))
-	realFile := filepath.Join(subDir, "bar.txt")
-	require.NoError(t, os.WriteFile(realFile, []byte("test data"), 0o600))
-	nonexistentFile := filepath.Join(subDir, "idontexist.txt")
-
-	dirLink := filepath.Join(tempRoot, "dirLink")
-	require.NoError(t, os.Symlink(subDir, dirLink))
-	fileLink := filepath.Join(tempRoot, "filelink")
-	require.NoError(t, os.Symlink(realFile, fileLink))
-	absLinkToNonexistentFile := filepath.Join(tempRoot, "abs")
-	require.NoError(t, os.Symlink(nonexistentFile, absLinkToNonexistentFile))
-	relLinkToNonexistentFile := filepath.Join(tempRoot, "rel")
-	require.NoError(t, os.Symlink("foo/idontexist.txt", relLinkToNonexistentFile))
-
-	tests := []struct {
-		name         string
-		path         string
-		expectedPath string
-	}{
-		{
-			name:         "real path",
-			path:         realFile,
-			expectedPath: realFile,
-		},
-		{
-			name:         "real path to nonexistent file",
-			path:         nonexistentFile,
-			expectedPath: nonexistentFile,
-		},
-		{
-			name:         "symlink in parent",
-			path:         filepath.Join(dirLink, "bar.txt"),
-			expectedPath: realFile,
-		},
-		{
-			name:         "link to file",
-			path:         fileLink,
-			expectedPath: realFile,
-		},
-		{
-			name:         "absolute link to nonexistent file",
-			path:         absLinkToNonexistentFile,
-			expectedPath: nonexistentFile,
-		},
-		{
-			name:         "relative link to nonexistent file",
-			path:         relLinkToNonexistentFile,
-			expectedPath: nonexistentFile,
-		},
-	}
-	for _, tc := range tests {
-		t.Run(tc.name, func(t *testing.T) {
-			out, err := evalSymlinks(tc.path)
-			assert.NoError(t, err)
-			assert.Equal(t, tc.expectedPath, out)
-		})
-	}
-
-	t.Run("don't eval with bad path", func(t *testing.T) {
-		_, err := evalSymlinks(filepath.Join(tempRoot, "this/does/not/exist.txt"))
-		require.Error(t, err)
-	})
-}
-
 func TestEnsureReqIsAllowed(t *testing.T) {
 	t.Parallel()
-	tempDir := t.TempDir()
-	tempRoot, err := filepath.EvalSymlinks(tempDir)
-	require.NoError(t, err)
-	file := filepath.Join(tempRoot, "foo.txt")
-	require.NoError(t, os.WriteFile(file, []byte("foo"), 0o600))
-	link := filepath.Join(tempRoot, "link")
-	require.NoError(t, os.Symlink(file, link))
-
+	const filePath = "/foo/bar/baz.txt"
 	passTests := []struct {
 		name    string
 		allowed *allowedOps
@@ -116,75 +40,79 @@ func TestEnsureReqIsAllowed(t *testing.T) {
 		{
 			name: "no restrictions",
 			req: &sftp.Request{
-				Filepath: "/foo/bar/baz.txt",
+				Filepath: filePath,
 				Method:   sftputils.MethodGet,
 			},
 		},
 		{
 			name:    "read",
-			allowed: &allowedOps{path: file},
+			allowed: &allowedOps{path: filePath},
 			req: &sftp.Request{
-				Filepath: file,
+				Filepath: filePath,
 				Method:   sftputils.MethodGet,
 			},
 		},
 		{
 			name:    "write",
-			allowed: &allowedOps{path: file, write: true},
+			allowed: &allowedOps{path: filePath, write: true},
 			req: &sftp.Request{
-				Filepath: file,
+				Filepath: filePath,
 				Method:   sftputils.MethodPut,
 			},
 		},
 		{
 			name:    "chmod",
-			allowed: &allowedOps{path: file, write: true},
+			allowed: &allowedOps{path: filePath, write: true},
 			req: &sftp.Request{
-				Filepath: file,
+				Filepath: filePath,
 				Method:   sftputils.MethodSetStat,
 			},
 		},
 		{
 			name:    "stat in read mode",
-			allowed: &allowedOps{path: file},
+			allowed: &allowedOps{path: filePath},
 			req: &sftp.Request{
-				Filepath: file,
+				Filepath: filePath,
 				Method:   sftputils.MethodStat,
 			},
 		},
 		{
 			name:    "lstat in read mode",
-			allowed: &allowedOps{path: file},
+			allowed: &allowedOps{path: filePath},
 			req: &sftp.Request{
-				Filepath: file,
+				Filepath: filePath,
 				Method:   sftputils.MethodLstat,
 			},
 		},
 		{
 			name:    "stat in write mode",
-			allowed: &allowedOps{path: file, write: true},
+			allowed: &allowedOps{path: filePath, write: true},
 			req: &sftp.Request{
-				Filepath: file,
+				Filepath: filePath,
 				Method:   sftputils.MethodStat,
 			},
 		},
 		{
 			name:    "lstat in write mode",
-			allowed: &allowedOps{path: file, write: true},
+			allowed: &allowedOps{path: filePath, write: true},
 			req: &sftp.Request{
-				Filepath: file,
+				Filepath: filePath,
 				Method:   sftputils.MethodLstat,
 			},
 		},
 	}
 	for _, tc := range passTests {
 		t.Run("allow "+tc.name, func(t *testing.T) {
+			tc.req.Filepath = filePath
+			if tc.allowed != nil {
+				tc.allowed.path = filePath
+			}
 			handler := &sftpHandler{allowed: tc.allowed}
 			require.NoError(t, handler.ensureReqIsAllowed(tc.req))
 		})
 	}
 
-	convolutedPath := tempRoot + "/../" + filepath.Base(tempRoot) + "/foo.txt"
+	const convolutedPath = "/foo/bar/../bar/baz.txt"
 	failTests := []struct {
 		name    string
 		allowed *allowedOps
@@ -199,42 +127,34 @@ func TestEnsureReqIsAllowed(t *testing.T) {
 			},
 		},
 		{
-			name:    "symlink",
-			allowed: &allowedOps{path: file},
-			req: &sftp.Request{
-				Filepath: link,
-				Method:   sftputils.MethodGet,
-			},
-		},
-		{
 			name:    "get in write mode",
-			allowed: &allowedOps{path: file, write: true},
+			allowed: &allowedOps{path: filePath, write: true},
 			req: &sftp.Request{
-				Filepath: file,
+				Filepath: filePath,
 				Method:   sftputils.MethodGet,
 			},
 		},
 		{
 			name:    "write in read mode",
-			allowed: &allowedOps{path: file},
+			allowed: &allowedOps{path: filePath},
 			req: &sftp.Request{
-				Filepath: file,
+				Filepath: filePath,
 				Method:   sftputils.MethodPut,
 			},
 		},
 		{
 			name:    "chmod in read mode",
-			allowed: &allowedOps{path: file},
+			allowed: &allowedOps{path: filePath},
 			req: &sftp.Request{
-				Filepath: file,
+				Filepath: filePath,
 				Method:   sftputils.MethodSetStat,
 			},
 		},
 		{
 			name:    "unknown method",
-			allowed: &allowedOps{path: file},
+			allowed: &allowedOps{path: filePath},
 			req: &sftp.Request{
-				Filepath: file,
+				Filepath: filePath,
 				Method:   sftputils.MethodRename,
 			},
 		},
@@ -243,6 +163,64 @@ func TestEnsureReqIsAllowed(t *testing.T) {
 		t.Run("deny "+tc.name, func(t *testing.T) {
 			handler := &sftpHandler{allowed: tc.allowed}
 			require.Error(t, handler.ensureReqIsAllowed(tc.req))
+		})
+	}
+}
+
+func TestOpenFile(t *testing.T) {
+	t.Parallel()
+	tempDir := t.TempDir()
+	tempRoot, err := filepath.EvalSymlinks(tempDir)
+	require.NoError(t, err)
+
+	file := filepath.Join(tempRoot, "foo.txt")
+	require.NoError(t, os.WriteFile(file, []byte("data"), 0o644))
+	link := filepath.Join(tempRoot, "link")
+	require.NoError(t, os.Symlink(file, link))
+
+	tests := []struct {
+		name    string
+		path    string
+		allowed *allowedOps
+		assert  assert.ErrorAssertionFunc
+	}{
+		{
+			name:   "regular read",
+			path:   file,
+			assert: assert.NoError,
+		},
+		{
+			name:    "moderated read",
+			path:    file,
+			allowed: &allowedOps{path: file},
+			assert:  assert.NoError,
+		},
+		{
+			name:   "symlink read",
+			path:   link,
+			assert: assert.NoError,
+		},
+		{
+			name:    "moderated symlink read",
+			path:    link,
+			allowed: &allowedOps{path: link},
+			assert:  assert.Error,
+		},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			req := sftp.NewRequest(sftputils.MethodGet, tc.path)
+			handler := &sftpHandler{
+				allowed: tc.allowed,
+			}
+			file, err := handler.openFile(req)
+			tc.assert(t, err)
+			if file == nil {
+				return
+			}
+			if closer, ok := file.(io.Closer); ok {
+				assert.NoError(t, closer.Close())
+			}
 		})
 	}
 }
