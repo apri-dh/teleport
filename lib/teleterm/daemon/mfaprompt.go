@@ -73,8 +73,8 @@ func (s *Service) promptAppMFA(ctx context.Context, in *api.PromptMFARequest) (*
 func (p *mfaPrompt) Run(ctx context.Context, chal *proto.MFAAuthenticateChallenge) (*proto.MFAAuthenticateResponse, error) {
 	promptOTP := chal.TOTP != nil
 	promptWebauthn := chal.WebauthnChallenge != nil && p.cfg.WebauthnSupported
-	promptSSO := chal.SSOChallenge != nil && p.cfg.MFACeremony != nil
-	promptBrowserMfa := chal.BrowserMFAChallenge != nil && p.cfg.MFACeremony != nil
+	promptSSO := chal.SSOChallenge != nil && p.cfg.CallbackCeremony != nil
+	promptBrowserMfa := chal.BrowserMFAChallenge != nil && p.cfg.CallbackCeremony != nil
 
 	// No prompt to run, no-op.
 	if !promptOTP && !promptWebauthn && !promptSSO && !promptBrowserMfa {
@@ -103,8 +103,8 @@ func (p *mfaPrompt) Run(ctx context.Context, chal *proto.MFAAuthenticateChalleng
 func (p *mfaPrompt) promptApp(ctx context.Context, chal *proto.MFAAuthenticateChallenge) (*proto.MFAAuthenticateResponse, error) {
 	promptOTP := chal.TOTP != nil
 	promptWebauthn := chal.WebauthnChallenge != nil && p.cfg.WebauthnSupported
-	promptSSO := chal.SSOChallenge != nil && p.cfg.MFACeremony != nil
-	promptBrowserMfa := chal.BrowserMFAChallenge != nil && p.cfg.MFACeremony != nil
+	promptSSO := chal.SSOChallenge != nil && p.cfg.CallbackCeremony != nil
+	promptBrowserMfa := chal.BrowserMFAChallenge != nil && p.cfg.CallbackCeremony != nil
 	scope := p.cfg.Extensions.GetScope()
 
 	var ssoChallenge *api.SSOChallenge
@@ -160,10 +160,10 @@ func (p *mfaPrompt) maybePromptWebauthn(ctx context.Context, chal *proto.MFAAuth
 
 // Prompt Browser/SSO if it's a supported method.
 func (p *mfaPrompt) maybePromptBrowserOrSSO(ctx context.Context, chal *proto.MFAAuthenticateChallenge) (*proto.MFAAuthenticateResponse, error) {
-	if (chal.SSOChallenge == nil && chal.BrowserMFAChallenge == nil) || p.cfg.MFACeremony == nil {
+	if (chal.SSOChallenge == nil && chal.BrowserMFAChallenge == nil) || p.cfg.CallbackCeremony == nil {
 		return nil, nil
 	}
 
-	resp, err := p.cfg.MFACeremony.Run(ctx, chal)
+	resp, err := p.cfg.CallbackCeremony.Run(ctx, chal)
 	return resp, trace.Wrap(err)
 }

@@ -167,7 +167,7 @@ func TestCLIPrompt(t *testing.T) {
 			},
 			modifyPromptConfig: func(cfg *mfa.CLIPromptConfig) {
 				cfg.PreferBrowser = true
-				cfg.MFACeremony = &mockSSOMFACeremony{
+				cfg.CallbackCeremony = &mockSSOMFACeremony{
 					runFunc: func(ctx context.Context, chal *proto.MFAAuthenticateChallenge) (*proto.MFAAuthenticateResponse, error) {
 						return &proto.MFAAuthenticateResponse{
 							Response: &proto.MFAAuthenticateResponse_Browser{
@@ -438,7 +438,7 @@ Enter your security key PIN:
 			},
 			modifyPromptConfig: func(cfg *mfa.CLIPromptConfig) {
 				cfg.WebauthnSupported = false
-				cfg.MFACeremony = nil
+				cfg.CallbackCeremony = nil
 			},
 			expectErr: trace.BadParameter("client does not support any available MFA methods [WEBAUTHN, SSO], see debug logs for details"),
 		},
@@ -548,7 +548,7 @@ Enter your security key PIN:
 			},
 			modifyPromptConfig: func(cfg *mfa.CLIPromptConfig) {
 				cfg.RuntimeOS = constants.WindowsOS
-				cfg.MFACeremony = &mockSSOMFACeremony{
+				cfg.CallbackCeremony = &mockSSOMFACeremony{
 					runFunc: func(ctx context.Context, chal *proto.MFAAuthenticateChallenge) (*proto.MFAAuthenticateResponse, error) {
 						return &proto.MFAAuthenticateResponse{
 							Response: &proto.MFAAuthenticateResponse_Browser{
@@ -581,7 +581,7 @@ Enter your security key PIN:
 				}
 			},
 			modifyPromptConfig: func(cfg *mfa.CLIPromptConfig) {
-				cfg.MFACeremony = &mockSSOMFACeremony{
+				cfg.CallbackCeremony = &mockSSOMFACeremony{
 					runFunc: func(ctx context.Context, chal *proto.MFAAuthenticateChallenge) (*proto.MFAAuthenticateResponse, error) {
 						return &proto.MFAAuthenticateResponse{
 							Response: &proto.MFAAuthenticateResponse_Browser{
@@ -630,7 +630,7 @@ Enter your security key PIN:
 				}
 			}
 
-			cfg.MFACeremony = &mockSSOMFACeremony{
+			cfg.CallbackCeremony = &mockSSOMFACeremony{
 				mfaResp: tc.expectResp,
 			}
 

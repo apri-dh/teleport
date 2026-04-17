@@ -235,18 +235,18 @@ func (c *CLIPrompt) Run(ctx context.Context, chal *proto.MFAAuthenticateChalleng
 		slog.DebugContext(ctx, "Disabling WebAuthn: hardware device MFA not supported by your platform")
 	}
 
-	if state.promptSSO && c.cfg.MFACeremony == nil {
+	if state.promptSSO && c.cfg.CallbackCeremony == nil {
 		state.promptSSO = false
 		slog.DebugContext(ctx, "Disabling SSO MFA: SSO MFA ceremony not available (this is likely a bug)")
 	}
 
-	if state.promptBrowser && (chal.WebauthnChallenge == nil || c.cfg.MFACeremony == nil) {
+	if state.promptBrowser && (chal.WebauthnChallenge == nil || c.cfg.CallbackCeremony == nil) {
 		state.promptBrowser = false
 		slog.DebugContext(
 			ctx,
 			"Disabling Browser MFA: user needs at least one webauthn device and client needs to support SSO MFA Ceremony",
 			"webauthn_available", chal.WebauthnChallenge != nil,
-			"mfa_ceremony_available (if false, this is a bug)", c.cfg.MFACeremony != nil,
+			"mfa_ceremony_available (if false, this is a bug)", c.cfg.CallbackCeremony != nil,
 		)
 	}
 
@@ -519,7 +519,7 @@ func (c *CLIPrompt) promptSSO(ctx context.Context, chal *proto.MFAAuthenticateCh
 	// but to be safe, copy and remove the Browser MFA challenge here.
 	ssoChal := *chal
 	ssoChal.BrowserMFAChallenge = nil
-	resp, err := c.cfg.MFACeremony.Run(ctx, &ssoChal)
+	resp, err := c.cfg.CallbackCeremony.Run(ctx, &ssoChal)
 	return resp, trace.Wrap(err)
 }
 
@@ -528,6 +528,6 @@ func (c *CLIPrompt) promptBrowser(ctx context.Context, chal *proto.MFAAuthentica
 	// so remove copy and remove the SSO challenge so Browser MFA is used.
 	browserChal := *chal
 	browserChal.SSOChallenge = nil
-	resp, err := c.cfg.MFACeremony.Run(ctx, &browserChal)
+	resp, err := c.cfg.CallbackCeremony.Run(ctx, &browserChal)
 	return resp, trace.Wrap(err)
 }
