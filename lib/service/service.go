@@ -3126,6 +3126,7 @@ func (process *TeleportProcess) newAccessCacheForServices(cfg accesspoint.Config
 	cfg.Plugin = services.Plugins
 	cfg.RecordingEncryption = services.RecordingEncryptionManager
 	cfg.WorkloadClusterService = services.WorkloadClusterService
+	cfg.SubCAService = services.SubCAService
 
 	return accesspoint.NewCache(cfg)
 }
@@ -3174,6 +3175,7 @@ func (process *TeleportProcess) newAccessCacheForClient(cfg accesspoint.Config, 
 	cfg.AutoUpdateService = client
 	cfg.GitServers = client.GitServerClient()
 	cfg.HealthCheckConfig = client
+	cfg.SubCAService = client
 
 	return accesspoint.NewCache(cfg)
 }
