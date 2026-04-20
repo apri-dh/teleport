@@ -456,7 +456,7 @@ func (s *server) periodicFunctions() {
 	ticker := time.NewTicker(defaults.ResyncInterval)
 	defer ticker.Stop()
 
-	if err := s.fetchExpectedLeafClusters(); err != nil {
+	if err := s.fetchExpectedLeafClusters(s.ctx); err != nil {
 		s.logger.WarnContext(s.Context, "Failed to fetch expected leaf cluster", "error", err)
 	}
 	for {
@@ -468,7 +468,7 @@ func (s *server) periodicFunctions() {
 		case proxies := <-s.proxyWatcher.ResourcesC:
 			s.fanOutProxies(proxies)
 		case <-ticker.C:
-			if err := s.fetchExpectedLeafClusters(); err != nil {
+			if err := s.fetchExpectedLeafClusters(s.ctx); err != nil {
 				s.logger.WarnContext(s.ctx, "Failed to fetch expected leaf clusters", "error", err)
 			}
 
@@ -497,8 +497,8 @@ func (s *server) periodicFunctions() {
 // what was found in the previous iteration and updates the in-memory cluster
 // placeholders. This map is used later by Cluster(s) to return either local or
 // leaf cluster, or if no match, a placeholder.
-func (s *server) fetchExpectedLeafClusters() error {
-	conns, err := s.LocalAccessPoint.GetAllTunnelConnections()
+func (s *server) fetchExpectedLeafClusters(ctx context.Context) error {
+	conns, err := s.LocalAccessPoint.GetAllTunnelConnections(ctx)
 	if err != nil {
 		return trace.Wrap(err)
 	}

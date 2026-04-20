@@ -1213,7 +1213,7 @@ func (s *ServicesTestSuite) OIDCPagination(t *testing.T) {
 func (s *ServicesTestSuite) TunnelConnectionsCRUD(t *testing.T) {
 	ctx := t.Context()
 	clusterName := "example.com"
-	out, err := s.TrustS.GetTunnelConnections(clusterName)
+	out, err := s.TrustS.GetTunnelConnections(ctx, clusterName)
 	require.NoError(t, err)
 	require.Empty(t, out)
 
@@ -1228,12 +1228,12 @@ func (s *ServicesTestSuite) TunnelConnectionsCRUD(t *testing.T) {
 	err = s.TrustS.UpsertTunnelConnection(ctx, conn)
 	require.NoError(t, err)
 
-	out, err = s.TrustS.GetTunnelConnections(clusterName)
+	out, err = s.TrustS.GetTunnelConnections(ctx, clusterName)
 	require.NoError(t, err)
 	require.Len(t, out, 1)
 	require.Empty(t, cmp.Diff(out[0], conn, cmpopts.IgnoreFields(types.Metadata{}, "Revision")))
 
-	out, err = s.TrustS.GetAllTunnelConnections()
+	out, err = s.TrustS.GetAllTunnelConnections(ctx)
 	require.NoError(t, err)
 	require.Len(t, out, 1)
 	require.Empty(t, cmp.Diff(out[0], conn, cmpopts.IgnoreFields(types.Metadata{}, "Revision")))
@@ -1244,12 +1244,12 @@ func (s *ServicesTestSuite) TunnelConnectionsCRUD(t *testing.T) {
 	err = s.TrustS.UpsertTunnelConnection(ctx, conn)
 	require.NoError(t, err)
 
-	out, err = s.TrustS.GetTunnelConnections(clusterName)
+	out, err = s.TrustS.GetTunnelConnections(ctx, clusterName)
 	require.NoError(t, err)
 	require.Len(t, out, 1)
 	require.Empty(t, cmp.Diff(out[0], conn, cmpopts.IgnoreFields(types.Metadata{}, "Revision")))
 
-	out, err = s.TrustS.GetAllTunnelConnections()
+	out, err = s.TrustS.GetAllTunnelConnections(ctx)
 	require.NoError(t, err)
 	for _, tc := range out {
 		err = s.TrustS.DeleteTunnelConnection(ctx, tc.GetClusterName(), tc.GetName())
@@ -1260,7 +1260,7 @@ func (s *ServicesTestSuite) TunnelConnectionsCRUD(t *testing.T) {
 	err = s.TrustS.UpsertTunnelConnection(ctx, conn)
 	require.NoError(t, err)
 
-	out, err = s.TrustS.GetTunnelConnections(clusterName)
+	out, err = s.TrustS.GetTunnelConnections(ctx, clusterName)
 	require.NoError(t, err)
 	require.Len(t, out, 1)
 	require.Empty(t, cmp.Diff(out[0], conn, cmpopts.IgnoreFields(types.Metadata{}, "Revision")))
@@ -1268,7 +1268,7 @@ func (s *ServicesTestSuite) TunnelConnectionsCRUD(t *testing.T) {
 	err = s.TrustS.DeleteTunnelConnection(ctx, clusterName, conn.GetName())
 	require.NoError(t, err)
 
-	out, err = s.TrustS.GetTunnelConnections(clusterName)
+	out, err = s.TrustS.GetTunnelConnections(ctx, clusterName)
 	require.NoError(t, err)
 	require.Empty(t, out)
 }
@@ -2241,7 +2241,7 @@ func (s *ServicesTestSuite) Events(t *testing.T) {
 				err = s.TrustS.UpsertTunnelConnection(ctx, conn)
 				require.NoError(t, err)
 
-				out, err := s.TrustS.GetTunnelConnections("example.com")
+				out, err := s.TrustS.GetTunnelConnections(ctx, "example.com")
 				require.NoError(t, err)
 
 				err = s.TrustS.DeleteTunnelConnection(ctx, conn.GetClusterName(), conn.GetName())
