@@ -133,9 +133,11 @@ func NewAPIServer(config *APIConfig) (http.Handler, error) {
 	srv.GET("/:version/proxies", srv.WithScopedAuth(srv.getProxies))
 	srv.DELETE("/:version/proxies", srv.WithAuth(srv.deleteAllProxies))
 	srv.DELETE("/:version/proxies/:name", srv.WithAuth(srv.deleteProxy))
+	// TODO(strideynet): move to httpMigratedHandler in v20.0.0
 	srv.POST("/:version/tunnelconnections", srv.WithAuth(srv.upsertTunnelConnection))
 	srv.GET("/:version/tunnelconnections/:cluster", srv.WithAuth(srv.getTunnelConnections))
 	srv.GET("/:version/tunnelconnections", srv.WithAuth(srv.getAllTunnelConnections))
+	// TODO(strideynet): move to httpMigratedHandler in v20.0.0
 	srv.DELETE("/:version/tunnelconnections/:cluster/:conn", srv.WithAuth(srv.deleteTunnelConnection))
 
 	// trusted clusters
@@ -547,7 +549,9 @@ type upsertTunnelConnectionRawReq struct {
 	TunnelConnection json.RawMessage `json:"tunnel_connection"`
 }
 
-// upsertTunnelConnection updates or inserts tunnel connection
+// upsertTunnelConnection updates or inserts tunnel connection.
+//
+// TODO(strideynet): move to httpMigratedHandler in v20.0.0
 func (s *APIServer) upsertTunnelConnection(auth *ServerWithRoles, w http.ResponseWriter, r *http.Request, p httprouter.Params, version string) (any, error) {
 	var req upsertTunnelConnectionRawReq
 	if err := httplib.ReadJSON(r, &req); err != nil {
@@ -557,7 +561,7 @@ func (s *APIServer) upsertTunnelConnection(auth *ServerWithRoles, w http.Respons
 	if err != nil {
 		return nil, trace.Wrap(err)
 	}
-	if err := auth.UpsertTunnelConnection(conn); err != nil {
+	if err := auth.UpsertTunnelConnection(r.Context(), conn); err != nil {
 		return nil, trace.Wrap(err)
 	}
 	return message("ok"), nil
@@ -597,9 +601,11 @@ func (s *APIServer) getAllTunnelConnections(auth *ServerWithRoles, w http.Respon
 	return items, nil
 }
 
-// deleteTunnelConnection deletes tunnel connection by name
+// deleteTunnelConnection deletes tunnel connection by name.
+//
+// TODO(strideynet): move to httpMigratedHandler in v20.0.0
 func (s *APIServer) deleteTunnelConnection(auth *ServerWithRoles, w http.ResponseWriter, r *http.Request, p httprouter.Params, version string) (any, error) {
-	err := auth.DeleteTunnelConnection(p.ByName("cluster"), p.ByName("conn"))
+	err := auth.DeleteTunnelConnection(r.Context(), p.ByName("cluster"), p.ByName("conn"))
 	if err != nil {
 		return nil, trace.Wrap(err)
 	}
