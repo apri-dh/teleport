@@ -187,14 +187,17 @@ func (s *sftpHandler) openFile(req *sftp.Request) (sftp.WriterAtReaderAt, error)
 		return nil, err
 	}
 	flags := sftputils.ParseFlags(req)
-	// Files in moderated sessions may not include symlinks.
+	var f *os.File
+	var err error
 	if s.allowed != nil {
-		flags |= syscall.O_NOFOLLOW
+		// Files in moderated sessions may not include symlinks.
+		f, err = openFileNoFollow(req.Filepath, flags, 0o644)
+	} else {
+		f, err = os.OpenFile(req.Filepath, flags, 0o644)
 	}
-	f, err := os.OpenFile(req.Filepath, flags, 0o644)
 	if err != nil {
 		// Symlink traversal is not allowed for moderated file transfers.
-		if s.allowed != nil && strings.Contains(err.Error(), "too many levels of symbolic links") {
+		if s.allowed != nil && errors.Is(err, syscall.ELOOP) {
 			return nil, trace.Errorf("following symlinks is not allowed for moderated file transfers, request the resolved path instead")
 		}
 		return nil, err

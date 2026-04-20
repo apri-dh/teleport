@@ -173,10 +173,12 @@ func TestOpenFile(t *testing.T) {
 	tempRoot, err := filepath.EvalSymlinks(tempDir)
 	require.NoError(t, err)
 
+	fileData := []byte("data")
 	file := filepath.Join(tempRoot, "foo.txt")
-	require.NoError(t, os.WriteFile(file, []byte("data"), 0o644))
+	require.NoError(t, os.WriteFile(file, fileData, 0o644))
 	link := filepath.Join(tempRoot, "link")
-	require.NoError(t, os.Symlink(file, link))
+	require.NoError(t, os.Symlink(tempRoot, link))
+	linkTarget := filepath.Join(link, "foo.txt")
 
 	tests := []struct {
 		name    string
@@ -197,13 +199,13 @@ func TestOpenFile(t *testing.T) {
 		},
 		{
 			name:   "symlink read",
-			path:   link,
+			path:   linkTarget,
 			assert: assert.NoError,
 		},
 		{
 			name:    "moderated symlink read",
-			path:    link,
-			allowed: &allowedOps{path: link},
+			path:    linkTarget,
+			allowed: &allowedOps{path: linkTarget},
 			assert:  assert.Error,
 		},
 	}
@@ -218,6 +220,10 @@ func TestOpenFile(t *testing.T) {
 			if file == nil {
 				return
 			}
+			gotData := make([]byte, len(fileData))
+			_, err = file.ReadAt(gotData, 0)
+			assert.NoError(t, err)
+			assert.Equal(t, fileData, gotData)
 			if closer, ok := file.(io.Closer); ok {
 				assert.NoError(t, closer.Close())
 			}
