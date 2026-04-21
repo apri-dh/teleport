@@ -89,7 +89,7 @@ func (c *Client) UpsertTunnelConnection(ctx context.Context, conn types.TunnelCo
 	})
 	if err != nil {
 		if trace.IsNotImplemented(err) {
-			return c.HTTPClient.upsertTunnelConnection(ctx, conn)
+			return trace.Wrap(c.HTTPClient.upsertTunnelConnection(ctx, conn))
 		}
 		return trace.Wrap(err)
 	}
@@ -121,7 +121,7 @@ func (c *Client) DeleteTunnelConnection(ctx context.Context, clusterName, connNa
 	})
 	if err != nil {
 		if trace.IsNotImplemented(err) {
-			return c.HTTPClient.deleteTunnelConnection(ctx, clusterName, connName)
+			return trace.Wrap(c.HTTPClient.deleteTunnelConnection(ctx, clusterName, connName))
 		}
 		return trace.Wrap(err)
 	}
