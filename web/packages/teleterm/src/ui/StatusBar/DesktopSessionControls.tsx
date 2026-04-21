@@ -18,8 +18,7 @@
 
 import styled, { useTheme } from 'styled-components';
 
-import { Box, Flex } from 'design';
-import { ResourceIcon } from 'design';
+import { Box, Flex, ResourceIcon } from 'design';
 import { Clipboard, FolderShared } from 'design/Icon';
 import { HoverTooltip } from 'design/Tooltip';
 import ActionMenu from 'shared/components/DesktopSession/ActionMenu';
