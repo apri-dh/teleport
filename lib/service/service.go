@@ -6820,6 +6820,7 @@ func (process *TeleportProcess) initApps() {
 				TCPPorts:              makeApplicationTCPPorts(app.TCPPorts),
 				MCP:                   app.MCP,
 				LLM:                   app.LLM,
+				TLS:                   app.TLS,
 			})
 			if err != nil {
 				return trace.Wrap(err)
