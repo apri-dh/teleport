@@ -160,7 +160,7 @@ func TestRootHostUsersBackend(t *testing.T) {
 	})
 
 	t.Run("Test sudoers", func(t *testing.T) {
-		if _, err := exec.LookPath("visudo"); err != nil {
+		if _, err := host.ResolveVisudo(); err != nil {
 			t.Skip("visudo not found on path")
 		}
 		validSudoersEntry := []byte("root ALL=(ALL) ALL")
@@ -320,8 +320,8 @@ func TestRootHostUsers(t *testing.T) {
 	})
 
 	t.Run("test create sudoers enabled users", func(t *testing.T) {
-		if _, err := exec.LookPath("visudo"); err != nil {
-			t.Skip("Visudo not found on path")
+		if _, err := host.ResolveVisudo(); err != nil {
+			t.Skip("visudo not found on path")
 		}
 		uuid := "host_uuid"
 		users := srv.NewHostUsers(context.Background(), presence, uuid)

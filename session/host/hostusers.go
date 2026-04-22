@@ -304,18 +304,36 @@ var ErrInvalidSudoers = errors.New("visudo: invalid sudoers file")
 // CheckSudoers tests a suders file using `visudo`. The contents
 // are written to the process via stdin pipe.
 func CheckSudoers(contents []byte) error {
-	visudoBin, err := exec.LookPath("visudo")
+	visudoBin, err := ResolveVisudo()
 	if err != nil {
 		return trace.Wrap(err, "cant find visudo binary")
 	}
 	cmd := exec.Command(visudoBin, "--check", "--file", "-")
 
-	cmd.Stdin = bytes.NewBuffer(contents)
+	cmd.Stdin = bytes.NewReader(contents)
 	output, err := cmd.Output()
 	if cmd.ProcessState.ExitCode() != 0 {
 		return trace.WrapWithMessage(ErrInvalidSudoers, string(output))
 	}
 	return trace.Wrap(err)
+}
+
+// ResolveVisudo attemps to locate the visudo binary. Newer linux
+// distributions have started replacing visudo with visudo-rs. To
+// accomoadate old and new distros, this first tries to locate visudo,
+// if it does not exist, then a visudo-rs binary is searched for. If
+// neither are found an error is returned.
+func ResolveVisudo() (string, error) {
+	visudoBin, err := exec.LookPath("visudo")
+	if err == nil {
+		return visudoBin, nil
+	}
+
+	if visudoBin, err := exec.LookPath("visudo-rs"); err == nil {
+		return visudoBin, nil
+	}
+
+	return "", trace.Wrap(err)
 }
 
 // UserShell invokes the 'getent' binary in order to fetch the default shell for the

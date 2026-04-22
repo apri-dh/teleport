@@ -52,11 +52,16 @@ type HostSudoersProvisioningBackend struct {
 // newHostUsersBackend initializes a new OS specific HostUsersBackend
 func newHostUsersBackend() (HostUsersBackend, error) {
 	var missing []string
-	for _, requiredBin := range []string{"usermod", "useradd", "getent", "groupadd", "visudo", "chage"} {
+	for _, requiredBin := range []string{"usermod", "useradd", "getent", "groupadd", "chage"} {
 		if _, err := exec.LookPath(requiredBin); err != nil {
 			missing = append(missing, requiredBin)
 		}
 	}
+
+	if _, err := host.ResolveVisudo(); err != nil {
+		missing = append(missing, "visudo")
+	}
+	
 	if len(missing) != 0 {
 		return nil, trace.NotFound("missing required binaries: %s", strings.Join(missing, ","))
 	}
