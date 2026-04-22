@@ -85,6 +85,12 @@ message ScopedRoleDefaults {
   // ClientIdleTimeout sets the default idle timeout for access sessions across all protocols
   // that do not specify their own value. Must be a valid Go duration string (e.g. "30m", "1h").
   string client_idle_timeout = 1;
+
+  // SessionRecordingMode configures the session recording strategy for access sessions
+  // across all protocols that do not specify their own value. Valid values are "strict"
+  // and "best_effort". If empty, defaults to "best_effort". A value set in a
+  // protocol-specific block (e.g. ssh.session_recording_mode) takes precedence.
+  string session_recording_mode = 4;
 }
 
 // ScopedRoleSSH groups all scoped role fields relevant to SSH access. Fields within the SSH block
@@ -126,6 +132,14 @@ message ScopedRoleSSH {
   // FileCopy indicates whether remote file operations via SCP or SFTP are allowed
   // over an SSH session. It defaults to allowing the user to download and upload files by default.
   optional bool file_copy = 11;
+
+  // EnhancedRecording is the list of BPF events to record for enhanced session recording.
+  repeated string enhanced_recording = 12;
+
+  // SessionRecordingMode configures the session recording strategy for SSH sessions.
+  // Valid values are "strict" and "best_effort". If empty, defers to the defaults block
+  // (or "best_effort" if unset there).
+  string session_recording_mode = 13;
 }
 
 // The group of all scoped role fields relevant to kube access. Fields within the kube block

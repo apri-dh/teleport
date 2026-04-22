@@ -231,8 +231,13 @@ type ScopedRoleDefaults struct {
 	// ClientIdleTimeout sets the default idle timeout for access sessions across all protocols
 	// that do not specify their own value. Must be a valid Go duration string (e.g. "30m", "1h").
 	ClientIdleTimeout string `protobuf:"bytes,1,opt,name=client_idle_timeout,json=clientIdleTimeout,proto3" json:"client_idle_timeout,omitempty"`
-	unknownFields     protoimpl.UnknownFields
-	sizeCache         protoimpl.SizeCache
+	// SessionRecordingMode configures the session recording strategy for access sessions
+	// across all protocols that do not specify their own value. Valid values are "strict"
+	// and "best_effort". If empty, defaults to "best_effort". A value set in a
+	// protocol-specific block (e.g. ssh.session_recording_mode) takes precedence.
+	SessionRecordingMode string `protobuf:"bytes,4,opt,name=session_recording_mode,json=sessionRecordingMode,proto3" json:"session_recording_mode,omitempty"`
+	unknownFields        protoimpl.UnknownFields
+	sizeCache            protoimpl.SizeCache
 }
 
 func (x *ScopedRoleDefaults) Reset() {
@@ -272,6 +277,13 @@ func (x *ScopedRoleDefaults) GetClientIdleTimeout() string {
 	return ""
 }
 
+func (x *ScopedRoleDefaults) GetSessionRecordingMode() string {
+	if x != nil {
+		return x.SessionRecordingMode
+	}
+	return ""
+}
+
 // ScopedRoleSSH groups all scoped role fields relevant to SSH access. Fields within the SSH block
 // encompass selection criteria and preconditions for access, as well as the controls to be applied in
 // cases where access is permitted. An SSH block is the primary source of truth for controls to be applied
@@ -303,9 +315,15 @@ type ScopedRoleSSH struct {
 	HostSudoers []string `protobuf:"bytes,10,rep,name=host_sudoers,json=hostSudoers,proto3" json:"host_sudoers,omitempty"`
 	// FileCopy indicates whether remote file operations via SCP or SFTP are allowed
 	// over an SSH session. It defaults to allowing the user to download and upload files by default.
-	FileCopy      *bool `protobuf:"varint,11,opt,name=file_copy,json=fileCopy,proto3,oneof" json:"file_copy,omitempty"`
-	unknownFields protoimpl.UnknownFields
-	sizeCache     protoimpl.SizeCache
+	FileCopy *bool `protobuf:"varint,11,opt,name=file_copy,json=fileCopy,proto3,oneof" json:"file_copy,omitempty"`
+	// EnhancedRecording is the list of BPF events to record for enhanced session recording.
+	EnhancedRecording []string `protobuf:"bytes,12,rep,name=enhanced_recording,json=enhancedRecording,proto3" json:"enhanced_recording,omitempty"`
+	// SessionRecordingMode configures the session recording strategy for SSH sessions.
+	// Valid values are "strict" and "best_effort". If empty, defers to the defaults block
+	// (or "best_effort" if unset there).
+	SessionRecordingMode string `protobuf:"bytes,13,opt,name=session_recording_mode,json=sessionRecordingMode,proto3" json:"session_recording_mode,omitempty"`
+	unknownFields        protoimpl.UnknownFields
+	sizeCache            protoimpl.SizeCache
 }
 
 func (x *ScopedRoleSSH) Reset() {
@@ -406,6 +424,20 @@ func (x *ScopedRoleSSH) GetFileCopy() bool {
 		return *x.FileCopy
 	}
 	return false
+}
+
+func (x *ScopedRoleSSH) GetEnhancedRecording() []string {
+	if x != nil {
+		return x.EnhancedRecording
+	}
+	return nil
+}
+
+func (x *ScopedRoleSSH) GetSessionRecordingMode() string {
+	if x != nil {
+		return x.SessionRecordingMode
+	}
+	return ""
 }
 
 // The group of all scoped role fields relevant to kube access. Fields within the kube block
@@ -770,9 +802,10 @@ const file_teleport_scopes_access_v1_role_proto_rawDesc = "" +
 	"\bdefaults\x18\x05 \x01(\v2-.teleport.scopes.access.v1.ScopedRoleDefaultsR\bdefaults\x12;\n" +
 	"\x05rules\x18\x06 \x03(\v2%.teleport.scopes.access.v1.ScopedRuleR\x05rules\x12:\n" +
 	"\x03ssh\x18\a \x01(\v2(.teleport.scopes.access.v1.ScopedRoleSSHR\x03ssh\x12=\n" +
-	"\x04kube\x18\b \x01(\v2).teleport.scopes.access.v1.ScopedRoleKubeR\x04kubeJ\x04\b\x02\x10\x03J\x04\b\x03\x10\x04R\x05allowR\aoptions\"D\n" +
+	"\x04kube\x18\b \x01(\v2).teleport.scopes.access.v1.ScopedRoleKubeR\x04kubeJ\x04\b\x02\x10\x03J\x04\b\x03\x10\x04R\x05allowR\aoptions\"z\n" +
 	"\x12ScopedRoleDefaults\x12.\n" +
-	"\x13client_idle_timeout\x18\x01 \x01(\tR\x11clientIdleTimeout\"\xd4\x04\n" +
+	"\x13client_idle_timeout\x18\x01 \x01(\tR\x11clientIdleTimeout\x124\n" +
+	"\x16session_recording_mode\x18\x04 \x01(\tR\x14sessionRecordingMode\"\xb9\x05\n" +
 	"\rScopedRoleSSH\x12\x16\n" +
 	"\x06logins\x18\x01 \x03(\tR\x06logins\x120\n" +
 	"\x06labels\x18\x02 \x03(\v2\x18.teleport.label.v1.LabelR\x06labels\x12.\n" +
@@ -784,7 +817,9 @@ const file_teleport_scopes_access_v1_role_proto_rawDesc = "" +
 	"\fmax_sessions\x18\t \x01(\x03H\x02R\vmaxSessions\x88\x01\x01\x12!\n" +
 	"\fhost_sudoers\x18\n" +
 	" \x03(\tR\vhostSudoers\x12 \n" +
-	"\tfile_copy\x18\v \x01(\bH\x03R\bfileCopy\x88\x01\x01B\x18\n" +
+	"\tfile_copy\x18\v \x01(\bH\x03R\bfileCopy\x88\x01\x01\x12-\n" +
+	"\x12enhanced_recording\x18\f \x03(\tR\x11enhancedRecording\x124\n" +
+	"\x16session_recording_mode\x18\r \x01(\tR\x14sessionRecordingModeB\x18\n" +
 	"\x16_permit_x11_forwardingB\x10\n" +
 	"\x0e_forward_agentB\x0f\n" +
 	"\r_max_sessionsB\f\n" +
