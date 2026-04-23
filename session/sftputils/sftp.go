@@ -23,14 +23,12 @@ import (
 	"io"
 	"io/fs"
 	"os"
-	"path/filepath"
 	"runtime"
 	"strings"
 	"time"
 
 	"github.com/gravitational/trace"
 	"github.com/pkg/sftp"
-	"golang.org/x/sys/unix"
 )
 
 // SFTP request methods.
@@ -180,89 +178,6 @@ func homeDirPrefixLen(path string) (int, bool) {
 	return -1, false
 }
 
-// OpenFileNoFollow opens a file without following symlinks in any part of the path.
-func OpenFileNoFollow(file string, flags int, mode os.FileMode) (*os.File, error) {
-	root := string(os.PathSeparator)
-	dir, filename := filepath.Split(file)
-	absDir, err := filepath.Abs(dir)
-	if err != nil {
-		return nil, err
-	}
-	relDir, err := filepath.Rel(string(os.PathSeparator), absDir)
-	if err != nil {
-		return nil, err
-	}
-	pathParts := strings.Split(relDir, root)
-	dirFd, err := unix.Open(root, unix.O_NOFOLLOW, 0)
-	if err != nil {
-		return nil, err
-	}
-	// Open each directory one at a time to ensure no symlinks are followed.
-	for _, part := range pathParts {
-		oldFd := dirFd
-		dirFd, err = unix.Openat(dirFd, part, unix.O_NOFOLLOW, 0)
-		closeErr := unix.Close(oldFd)
-		if err != nil {
-			return nil, err
-		} else if closeErr != nil {
-			_ = unix.Close(dirFd)
-			return nil, closeErr
-		}
-	}
-	fd, err := unix.Openat(dirFd, filename, flags|unix.O_NOFOLLOW, uint32(mode))
-	closeErr := unix.Close(dirFd)
-	if err != nil {
-		return nil, err
-	} else if closeErr != nil {
-		_ = unix.Close(fd)
-		return nil, closeErr
-	}
-	return os.NewFile(uintptr(fd), file), nil
-}
-
-// Setstat sets file attributes on a file without following any symlinks.
-func SetstatNoFollow(file string, attrFlags sftp.FileAttrFlags, attrs *sftp.FileStat) error {
-	f, err := OpenFileNoFollow(file, os.O_WRONLY, 0)
-	if err != nil {
-		return err
-	}
-	defer f.Close()
-	syscallConn, err := f.SyscallConn()
-	if err != nil {
-		return err
-	}
-	var modifyErr error
-	ctrlErr := syscallConn.Control(func(fd uintptr) {
-		if attrFlags.Permissions {
-			if modifyErr = unix.Fchmod(int(fd), uint32(attrs.FileMode())); modifyErr != nil {
-				return
-			}
-		}
-		if attrFlags.UidGid {
-			if modifyErr = unix.Fchown(int(fd), int(attrs.UID), int(attrs.GID)); modifyErr != nil {
-				return
-			}
-		}
-		if attrFlags.Size {
-			if modifyErr = unix.Ftruncate(int(fd), int64(attrs.Size)); modifyErr != nil {
-				return
-			}
-		}
-		if attrFlags.Acmodtime {
-			if modifyErr = unix.Futimes(int(fd), []unix.Timeval{
-				{Sec: int64(attrs.Atime)},
-				{Sec: int64(attrs.Mtime)},
-			}); modifyErr != nil {
-				return
-			}
-		}
-	})
-	if ctrlErr != nil {
-		return ctrlErr
-	}
-	return modifyErr
-}
-
 // NonRecursiveDirectoryTransferError is returned when an attempt is made
 // to download a directory without providing the recursive option.
 // It's used to distinguish this specific situation in clients which
@@ -275,33 +190,30 @@ func (n *NonRecursiveDirectoryTransferError) Error() string {
 	return fmt.Sprintf("%q is a directory, but the recursive option was not passed", n.Path)
 }
 
-func setstat(req *sftp.Request, fs FileSystem) error {
-	attrFlags := req.AttrFlags()
-	attrs := req.Attributes()
-
+func setstat(file string, attrFlags sftp.FileAttrFlags, attrs *sftp.FileStat, fs FileSystem) error {
 	if attrFlags.Acmodtime {
 		atime := time.Unix(int64(attrs.Atime), 0)
 		mtime := time.Unix(int64(attrs.Mtime), 0)
 
-		err := fs.Chtimes(req.Filepath, atime, mtime)
+		err := fs.Chtimes(file, atime, mtime)
 		if err != nil {
 			return err
 		}
 	}
 	if attrFlags.Permissions {
-		err := fs.Chmod(req.Filepath, attrs.FileMode())
+		err := fs.Chmod(file, attrs.FileMode())
 		if err != nil {
 			return err
 		}
 	}
 	if attrFlags.UidGid {
-		err := fs.Chown(req.Filepath, int(attrs.UID), int(attrs.GID))
+		err := fs.Chown(file, int(attrs.UID), int(attrs.GID))
 		if err != nil {
 			return err
 		}
 	}
 	if attrFlags.Size {
-		err := fs.Truncate(req.Filepath, int64(attrs.Size))
+		err := fs.Truncate(file, int64(attrs.Size))
 		if err != nil {
 			return err
 		}
@@ -318,7 +230,7 @@ func HandleFilecmd(req *sftp.Request, filesys FileSystem) error {
 	}
 	switch req.Method {
 	case MethodSetStat:
-		return setstat(req, filesys)
+		return setstat(req.Filepath, req.AttrFlags(), req.Attributes(), filesys)
 	case MethodRename:
 		if req.Target == "" {
 			return os.ErrInvalid

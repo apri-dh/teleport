@@ -17,7 +17,12 @@
 package reexecsftp
 
 import (
+	"io"
+	"os"
+	"path/filepath"
+	"syscall"
 	"testing"
+	"time"
 
 	"github.com/pkg/sftp"
 	"github.com/stretchr/testify/require"
@@ -161,4 +166,82 @@ func TestEnsureReqIsAllowed(t *testing.T) {
 			require.Error(t, handler.ensureReqIsAllowed(tc.req))
 		})
 	}
+}
+
+func newTempDir(t *testing.T) string {
+	tempDir := t.TempDir()
+	tempRoot, err := filepath.EvalSymlinks(tempDir)
+	require.NoError(t, err)
+	return tempRoot
+}
+
+func TestNoFollowFileOperations(t *testing.T) {
+	t.Parallel()
+
+	t.Run("successful on path with no symlinks", func(t *testing.T) {
+		targetFile := filepath.Join(newTempDir(t), "myfile.txt")
+
+		f, err := openFileNoFollow(targetFile, os.O_WRONLY|os.O_CREATE, 0o600)
+		require.NoError(t, err)
+		const fileData = "foo bar baz"
+		_, err = f.WriteString(fileData)
+		require.NoError(t, err)
+		require.NoError(t, f.Close())
+
+		info, err := os.Stat(targetFile)
+		require.NoError(t, err)
+		require.Equal(t, int64(len(fileData)), info.Size())
+		require.Equal(t, os.FileMode(0o600), info.Mode())
+
+		f, err = openFileNoFollow(targetFile, os.O_RDONLY, 0)
+		require.NoError(t, err)
+		data, err := io.ReadAll(f)
+		require.NoError(t, err)
+		require.NoError(t, f.Close())
+		require.Equal(t, []byte(fileData), data)
+
+		updatedTime := info.ModTime().Add(time.Hour).Truncate(time.Second)
+		err = setstatNoFollow(targetFile, sftp.FileAttrFlags{
+			Size:        true,
+			Permissions: true,
+			Acmodtime:   true,
+		}, &sftp.FileStat{
+			Size:  uint64(len(fileData) / 2),
+			Mode:  0o604,
+			Atime: uint32(updatedTime.Unix()),
+			Mtime: uint32(updatedTime.Unix()),
+		})
+		require.NoError(t, err)
+		newInfo, err := os.Stat(targetFile)
+		require.NoError(t, err)
+		require.Equal(t, int64(len(fileData)/2), newInfo.Size())
+		require.Equal(t, os.FileMode(0o604), newInfo.Mode())
+		require.Equal(t, updatedTime, newInfo.ModTime())
+	})
+
+	t.Run("block symlink in parent dir", func(t *testing.T) {
+		tempDir := newTempDir(t)
+		targetFile := filepath.Join(tempDir, "foo.txt")
+		require.NoError(t, os.WriteFile(targetFile, []byte("foo"), 0o644))
+		link := filepath.Join(tempDir, "link")
+		require.NoError(t, os.Symlink(tempDir, link))
+		linkTarget := filepath.Join(link, "foo.txt")
+
+		_, err := openFileNoFollow(linkTarget, os.O_WRONLY|os.O_CREATE, 0)
+		require.ErrorIs(t, err, syscall.ELOOP)
+		err = setstatNoFollow(linkTarget, sftp.FileAttrFlags{Permissions: true}, &sftp.FileStat{Mode: 0o600})
+		require.ErrorIs(t, err, syscall.ELOOP)
+	})
+	t.Run("block symlink at end of path", func(t *testing.T) {
+		tempDir := newTempDir(t)
+		targetFile := filepath.Join(tempDir, "foo.txt")
+		require.NoError(t, os.WriteFile(targetFile, []byte("foo"), 0o644))
+		link := filepath.Join(tempDir, "link")
+		require.NoError(t, os.Symlink(targetFile, link))
+
+		_, err := openFileNoFollow(link, os.O_WRONLY|os.O_CREATE, 0)
+		require.ErrorIs(t, err, syscall.ELOOP)
+		err = setstatNoFollow(link, sftp.FileAttrFlags{Permissions: true}, &sftp.FileStat{Mode: 0o600})
+		require.ErrorIs(t, err, syscall.ELOOP)
+	})
 }

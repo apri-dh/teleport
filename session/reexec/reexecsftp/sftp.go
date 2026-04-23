@@ -28,6 +28,7 @@ import (
 	"os"
 	"os/user"
 	"path"
+	"path/filepath"
 	"strings"
 	"sync"
 	"syscall"
@@ -191,7 +192,7 @@ func (s *sftpHandler) openFile(req *sftp.Request) (sftp.WriterAtReaderAt, error)
 	var err error
 	if s.allowed != nil {
 		// Files in moderated sessions may not include symlinks.
-		f, err = sftputils.OpenFileNoFollow(req.Filepath, flags, 0o644)
+		f, err = openFileNoFollow(req.Filepath, flags, 0o644)
 	} else {
 		f, err = os.OpenFile(req.Filepath, flags, 0o644)
 	}
@@ -230,7 +231,7 @@ func (s *sftpHandler) Filecmd(req *sftp.Request) (retErr error) {
 	if s.allowed != nil && req.Method == sftputils.MethodSetStat {
 		// Setstat can be called during moderated file transfers, don't follow
 		// symlinks if that's the case.
-		return sftputils.SetstatNoFollow(req.Filepath, req.AttrFlags(), req.Attributes())
+		return setstatNoFollow(req.Filepath, req.AttrFlags(), req.Attributes())
 	}
 
 	return sftputils.HandleFilecmd(req, nil /* local filesystem */)
@@ -399,4 +400,87 @@ func openFD(fd uintptr, name string) (*os.File, error) {
 	}
 
 	return file, nil
+}
+
+// openFileNoFollow opens a file without following symlinks in any part of the path.
+func openFileNoFollow(file string, flags int, mode os.FileMode) (*os.File, error) {
+	root := string(os.PathSeparator)
+	dir, filename := filepath.Split(file)
+	absDir, err := filepath.Abs(dir)
+	if err != nil {
+		return nil, err
+	}
+	relDir, err := filepath.Rel(string(os.PathSeparator), absDir)
+	if err != nil {
+		return nil, err
+	}
+	pathParts := strings.Split(relDir, root)
+	dirFd, err := unix.Open(root, unix.O_NOFOLLOW, 0)
+	if err != nil {
+		return nil, err
+	}
+	// Open each directory one at a time to ensure no symlinks are followed.
+	for _, part := range pathParts {
+		oldFd := dirFd
+		dirFd, err = unix.Openat(dirFd, part, unix.O_NOFOLLOW, 0)
+		closeErr := unix.Close(oldFd)
+		if err != nil {
+			return nil, err
+		} else if closeErr != nil {
+			_ = unix.Close(dirFd)
+			return nil, closeErr
+		}
+	}
+	fd, err := unix.Openat(dirFd, filename, flags|unix.O_NOFOLLOW, uint32(mode))
+	closeErr := unix.Close(dirFd)
+	if err != nil {
+		return nil, err
+	} else if closeErr != nil {
+		_ = unix.Close(fd)
+		return nil, closeErr
+	}
+	return os.NewFile(uintptr(fd), file), nil
+}
+
+// setstatNoFollow sets file attributes on a file without following any symlinks.
+func setstatNoFollow(file string, attrFlags sftp.FileAttrFlags, attrs *sftp.FileStat) error {
+	f, err := openFileNoFollow(file, os.O_WRONLY, 0)
+	if err != nil {
+		return err
+	}
+	defer f.Close()
+	syscallConn, err := f.SyscallConn()
+	if err != nil {
+		return err
+	}
+	var modifyErr error
+	ctrlErr := syscallConn.Control(func(fd uintptr) {
+		if attrFlags.Permissions {
+			if modifyErr = unix.Fchmod(int(fd), uint32(attrs.FileMode())); modifyErr != nil {
+				return
+			}
+		}
+		if attrFlags.UidGid {
+			if modifyErr = unix.Fchown(int(fd), int(attrs.UID), int(attrs.GID)); modifyErr != nil {
+				return
+			}
+		}
+		if attrFlags.Size {
+			if modifyErr = unix.Ftruncate(int(fd), int64(attrs.Size)); modifyErr != nil {
+				return
+			}
+		}
+		if attrFlags.Acmodtime {
+			if modifyErr = unix.Futimes(int(fd), []unix.Timeval{
+				{Sec: int64(attrs.Atime)},
+				{Sec: int64(attrs.Mtime)},
+			}); modifyErr != nil {
+				return
+			}
+		}
+	})
+	if ctrlErr != nil {
+		return ctrlErr
+	}
+	return modifyErr
 }
