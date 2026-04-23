@@ -415,14 +415,14 @@ func openFileNoFollow(file string, flags int, mode os.FileMode) (*os.File, error
 		return nil, err
 	}
 	pathParts := strings.Split(relDir, root)
-	dirFd, err := unix.Open(root, unix.O_NOFOLLOW, 0)
+	dirFd, err := unix.Open(root, unix.O_NOFOLLOW|unix.O_DIRECTORY, 0)
 	if err != nil {
 		return nil, err
 	}
 	// Open each directory one at a time to ensure no symlinks are followed.
 	for _, part := range pathParts {
 		oldFd := dirFd
-		dirFd, err = unix.Openat(dirFd, part, unix.O_NOFOLLOW, 0)
+		dirFd, err = unix.Openat(dirFd, part, unix.O_NOFOLLOW|unix.O_DIRECTORY, 0)
 		closeErr := unix.Close(oldFd)
 		if err != nil {
 			return nil, err
