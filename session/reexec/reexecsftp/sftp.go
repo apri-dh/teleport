@@ -191,7 +191,7 @@ func (s *sftpHandler) openFile(req *sftp.Request) (sftp.WriterAtReaderAt, error)
 	var err error
 	if s.allowed != nil {
 		// Files in moderated sessions may not include symlinks.
-		f, err = openFileNoFollow(req.Filepath, flags, 0o644)
+		f, err = sftputils.OpenFileNoFollow(req.Filepath, flags, 0o644)
 	} else {
 		f, err = os.OpenFile(req.Filepath, flags, 0o644)
 	}
@@ -225,6 +225,12 @@ func (s *sftpHandler) Filecmd(req *sftp.Request) (retErr error) {
 	}
 	if err := s.ensureReqIsAllowed(req); err != nil {
 		return err
+	}
+
+	if s.allowed != nil && req.Method == sftputils.MethodSetStat {
+		// Setstat can be called during moderated file transfers, don't follow
+		// symlinks if that's the case.
+		return sftputils.SetstatNoFollow(req.Filepath, req.AttrFlags(), req.Attributes())
 	}
 
 	return sftputils.HandleFilecmd(req, nil /* local filesystem */)

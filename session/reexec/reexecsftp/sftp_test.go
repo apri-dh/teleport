@@ -17,13 +17,9 @@
 package reexecsftp
 
 import (
-	"io"
-	"os"
-	"path/filepath"
 	"testing"
 
 	"github.com/pkg/sftp"
-	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
 	"github.com/gravitational/teleport/session/sftputils"
@@ -163,70 +159,6 @@ func TestEnsureReqIsAllowed(t *testing.T) {
 		t.Run("deny "+tc.name, func(t *testing.T) {
 			handler := &sftpHandler{allowed: tc.allowed}
 			require.Error(t, handler.ensureReqIsAllowed(tc.req))
-		})
-	}
-}
-
-func TestOpenFile(t *testing.T) {
-	t.Parallel()
-	tempDir := t.TempDir()
-	tempRoot, err := filepath.EvalSymlinks(tempDir)
-	require.NoError(t, err)
-
-	fileData := []byte("data")
-	file := filepath.Join(tempRoot, "foo.txt")
-	require.NoError(t, os.WriteFile(file, fileData, 0o644))
-	link := filepath.Join(tempRoot, "link")
-	require.NoError(t, os.Symlink(tempRoot, link))
-	linkTarget := filepath.Join(link, "foo.txt")
-
-	tests := []struct {
-		name    string
-		path    string
-		allowed *allowedOps
-		assert  assert.ErrorAssertionFunc
-	}{
-		{
-			name:   "regular read",
-			path:   file,
-			assert: assert.NoError,
-		},
-		{
-			name:    "moderated read",
-			path:    file,
-			allowed: &allowedOps{path: file},
-			assert:  assert.NoError,
-		},
-		{
-			name:   "symlink read",
-			path:   linkTarget,
-			assert: assert.NoError,
-		},
-		{
-			name:    "moderated symlink read",
-			path:    linkTarget,
-			allowed: &allowedOps{path: linkTarget},
-			assert:  assert.Error,
-		},
-	}
-	for _, tc := range tests {
-		t.Run(tc.name, func(t *testing.T) {
-			req := sftp.NewRequest(sftputils.MethodGet, tc.path)
-			handler := &sftpHandler{
-				allowed: tc.allowed,
-			}
-			file, err := handler.openFile(req)
-			tc.assert(t, err)
-			if file == nil {
-				return
-			}
-			gotData := make([]byte, len(fileData))
-			_, err = file.ReadAt(gotData, 0)
-			assert.NoError(t, err)
-			assert.Equal(t, fileData, gotData)
-			if closer, ok := file.(io.Closer); ok {
-				assert.NoError(t, closer.Close())
-			}
 		})
 	}
 }

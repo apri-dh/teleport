@@ -23,12 +23,14 @@ import (
 	"io"
 	"io/fs"
 	"os"
+	"path/filepath"
 	"runtime"
 	"strings"
 	"time"
 
 	"github.com/gravitational/trace"
 	"github.com/pkg/sftp"
+	"golang.org/x/sys/unix"
 )
 
 // SFTP request methods.
@@ -176,6 +178,85 @@ func homeDirPrefixLen(path string) (int, bool) {
 	}
 
 	return -1, false
+}
+
+// OpenFileNoFollow opens a file without following symlinks in any part of the path.
+func OpenFileNoFollow(file string, flags int, mode os.FileMode) (*os.File, error) {
+	root := string(os.PathSeparator)
+	dir, filename := filepath.Split(file)
+	absDir, err := filepath.Abs(dir)
+	if err != nil {
+		return nil, err
+	}
+	relDir, err := filepath.Rel(string(os.PathSeparator), absDir)
+	if err != nil {
+		return nil, err
+	}
+	pathParts := strings.Split(relDir, root)
+	dirFd, err := unix.Open(root, unix.O_NOFOLLOW, 0)
+	if err != nil {
+		return nil, err
+	}
+	// Open each directory one at a time to ensure no symlinks are followed.
+	for _, part := range pathParts {
+		oldFd := dirFd
+		dirFd, err = unix.Openat(dirFd, part, unix.O_NOFOLLOW, 0)
+		closeErr := unix.Close(oldFd)
+		if err != nil {
+			return nil, err
+		} else if closeErr != nil {
+			_ = unix.Close(dirFd)
+			return nil, closeErr
+		}
+	}
+	fd, err := unix.Openat(dirFd, filename, flags|unix.O_NOFOLLOW, uint32(mode))
+	if err != nil {
+		return nil, err
+	}
+	return os.NewFile(uintptr(fd), file), nil
+}
+
+// Setstat sets file attributes on a file without following any symlinks.
+func SetstatNoFollow(file string, attrFlags sftp.FileAttrFlags, attrs *sftp.FileStat) error {
+	f, err := OpenFileNoFollow(file, os.O_WRONLY, 0)
+	if err != nil {
+		return err
+	}
+	defer f.Close()
+	syscallConn, err := f.SyscallConn()
+	if err != nil {
+		return err
+	}
+	var modifyErr error
+	ctrlErr := syscallConn.Control(func(fd uintptr) {
+		if attrFlags.Permissions {
+			if modifyErr = unix.Fchmod(int(fd), uint32(attrs.FileMode())); modifyErr != nil {
+				return
+			}
+		}
+		if attrFlags.UidGid {
+			if modifyErr = unix.Fchown(int(fd), int(attrs.UID), int(attrs.GID)); modifyErr != nil {
+				return
+			}
+		}
+		if attrFlags.Size {
+			if modifyErr = unix.Ftruncate(int(fd), int64(attrs.Size)); modifyErr != nil {
+				return
+			}
+		}
+		if attrFlags.Acmodtime {
+			if modifyErr = unix.Futimes(int(fd), []unix.Timeval{
+				{Sec: int64(attrs.Atime)},
+				{Sec: int64(attrs.Mtime)},
+			}); modifyErr != nil {
+				return
+			}
+		}
+	})
+	if ctrlErr != nil {
+		return ctrlErr
+	}
+	return modifyErr
 }
 
 // NonRecursiveDirectoryTransferError is returned when an attempt is made
