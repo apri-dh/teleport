@@ -210,8 +210,12 @@ func OpenFileNoFollow(file string, flags int, mode os.FileMode) (*os.File, error
 		}
 	}
 	fd, err := unix.Openat(dirFd, filename, flags|unix.O_NOFOLLOW, uint32(mode))
+	closeErr := unix.Close(dirFd)
 	if err != nil {
 		return nil, err
+	} else if closeErr != nil {
+		_ = unix.Close(fd)
+		return nil, closeErr
 	}
 	return os.NewFile(uintptr(fd), file), nil
 }
