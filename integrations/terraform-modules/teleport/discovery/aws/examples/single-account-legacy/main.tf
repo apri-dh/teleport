@@ -16,10 +16,10 @@ module "aws_discovery" {
   create_aws_iam_openid_connect_provider = false
 
   # Use a custom IAM policy with permission conditions
-  aws_iam_policy_document = data.aws_iam_policy_document.teleport_discovery_service_single_account.json
+  aws_iam_policy_document = data.aws_iam_policy_document.teleport_discovery_resource_enrollment.json
 }
 
-data "aws_iam_policy_document" "teleport_discovery_service_single_account" {
+data "aws_iam_policy_document" "teleport_discovery_resource_enrollment" {
   # read-only discovery
   statement {
     effect = "Allow"

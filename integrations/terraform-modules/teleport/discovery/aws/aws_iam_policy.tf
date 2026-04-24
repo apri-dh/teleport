@@ -47,13 +47,40 @@ locals {
   )
 }
 
-data "aws_iam_policy_document" "teleport_discovery_service_single_account" {
+data "aws_iam_policy_document" "teleport_discovery_resource_enrollment" {
   count = local.create ? 1 : 0
 
   statement {
     effect    = "Allow"
     actions   = local.policy_actions
     resources = ["*"]
+  }
+}
+
+data "aws_iam_policy_document" "teleport_organization_discovery" {
+  count = local.create && local.organization_deployment ? 1 : 0
+
+  # Allow listing accounts in the organization.
+  statement {
+    effect = "Allow"
+
+    actions = [
+      # Required for enumerating all the accounts under the organization.
+      "organizations:ListAccountsForParent",
+      "organizations:ListChildren",
+      "organizations:ListRoots",
+      # Allow Teleport to verify that an account belongs to an organization.
+      "organizations:DescribeAccount"
+    ]
+
+    resources = ["*"]
+  }
+
+  # Allow assuming the role created in member accounts.
+  statement {
+    effect    = "Allow"
+    actions   = ["sts:AssumeRole"]
+    resources = ["arn:${local.aws_partition}:iam::*:role/${var.aws_iam_role_name_for_child_accounts}"]
   }
 }
 
@@ -67,8 +94,33 @@ resource "aws_iam_policy" "teleport_discovery_service" {
   tags        = local.apply_aws_tags
   policy = coalesce(
     var.aws_iam_policy_document,
-    data.aws_iam_policy_document.teleport_discovery_service_single_account[0].json,
+    (
+      local.single_account_deployment ?
+      data.aws_iam_policy_document.teleport_discovery_resource_enrollment[0].json :
+      data.aws_iam_policy_document.teleport_organization_discovery[0].json
+    )
   )
+}
+
+data "aws_iam_policy_document" "allow_assume_role_for_child_accounts" {
+  count = local.create && local.organization_deployment ? 1 : 0
+
+  statement {
+    principals {
+      type        = "AWS"
+      identifiers = [aws_iam_role.teleport_discovery_service[0].arn]
+    }
+
+    condition {
+      test     = "StringEquals"
+      variable = "aws:PrincipalOrgID"
+      values   = [local.aws_organization_id]
+    }
+
+    effect = "Allow"
+
+    actions = ["sts:AssumeRole"]
+  }
 }
 
 ################################################################################

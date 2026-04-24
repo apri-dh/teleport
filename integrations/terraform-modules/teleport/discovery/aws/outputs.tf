@@ -27,3 +27,12 @@ output "teleport_provision_token_name" {
   description = "Name of the Teleport provision `token` that allows Teleport nodes to join the Teleport cluster using AWS IAM credentials. Token details can be viewed with `tctl get token/<name>`."
   value       = try(nonsensitive(teleport_provision_token.aws_iam[0].metadata.name), null)
 }
+
+output "iam_role_to_create_in_child_accounts" {
+  description = "Manually create the following AWS IAM Role in each AWS account under the organization."
+  value = (local.create && local.organization_deployment) ? {
+    name               = var.aws_iam_role_name_for_child_accounts,
+    assume_role_policy = data.aws_iam_policy_document.allow_assume_role_for_child_accounts[0].json,
+    policy             = data.aws_iam_policy_document.teleport_discovery_resource_enrollment[0].json,
+  } : null
+}

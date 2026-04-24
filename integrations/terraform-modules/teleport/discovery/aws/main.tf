@@ -9,13 +9,18 @@ locals {
     "teleport.dev/iac-tool" = "terraform",
   })
 
+  organization_deployment   = var.enroll_organization_accounts
+  single_account_deployment = !var.enroll_organization_accounts
+
+  aws_organization_id = try(data.aws_organizations_organization.this[0].id, "")
+
   aws_account_id = try(data.aws_caller_identity.this[0].account_id, "")
   aws_partition  = try(data.aws_partition.this[0].partition, "")
 
   teleport_cluster_name         = try(local.teleport_ping.cluster_name, "")
   teleport_ping                 = try(jsondecode(data.http.teleport_ping[0].response_body), null)
   teleport_proxy_public_url     = "https://${var.teleport_proxy_public_addr}"
-  teleport_resource_name_suffix = "aws-account-${local.aws_account_id}"
+  teleport_resource_name_suffix = local.organization_deployment ? "aws-organization-${local.aws_organization_id}" : "aws-account-${local.aws_account_id}"
 }
 
 data "aws_caller_identity" "this" {
@@ -24,6 +29,10 @@ data "aws_caller_identity" "this" {
 
 data "aws_partition" "this" {
   count = local.create ? 1 : 0
+}
+
+data "aws_organizations_organization" "this" {
+  count = local.create && local.organization_deployment ? 1 : 0
 }
 
 data "http" "teleport_ping" {

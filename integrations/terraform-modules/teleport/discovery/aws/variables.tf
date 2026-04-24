@@ -249,3 +249,30 @@ variable "discovery_service_iam_credential_source" {
     error_message = "If the discovery service is to assume the discovery IAM role without OIDC (`use_oidc_integration` is set to false), then `trust_role.role_arn` must be set to a non-empty value."
   }
 }
+
+variable "enroll_organization_accounts" {
+  description = "Discover resources in all the AWS accounts under the organization. Only supported for EC2 resource discovery and requires manually creating an AWS IAM role in each child account. Check the module outputs for the trust relationship and permissions required."
+  type        = bool
+  default     = false
+  nullable    = false
+}
+
+variable "filter_organizational_units" {
+  description = "Filter AWS accounts based on their organizational unit in the organization. At least one include must be specified. Requires `enroll_organization_accounts` to be set to true."
+  type = object({
+    include = optional(list(string), [])
+    exclude = optional(list(string), [])
+  })
+  default = {
+    include = []
+    exclude = []
+  }
+  nullable = true
+}
+
+variable "aws_iam_role_name_for_child_accounts" {
+  description = "Name for the AWS IAM role to assume in organization accounts. This role must be created manually in each child account. Check the module outputs for the trust relationship and permissions required."
+  type        = string
+  default     = "teleport-discovery-for-child-account"
+  nullable    = false
+}

@@ -25,29 +25,42 @@ locals {
     : local.legacy_aws_matchers
   )
 
+  assume_role = merge(
+    (
+      var.discovery_service_iam_credential_source.trust_role != null
+      ? {
+        role_arn = one(aws_iam_role.teleport_discovery_service[*].arn)
+        external_id = (
+          var.discovery_service_iam_credential_source.trust_role.external_id != ""
+          ? var.discovery_service_iam_credential_source.trust_role.external_id
+          : null
+        )
+      }
+      : {}
+    ),
+    local.organization_deployment ? {
+      role_name = var.aws_iam_role_name_for_child_accounts
+    } : {}
+  )
+
+  organization = local.organization_deployment ? {
+    organization_id      = local.aws_organization_id
+    organizational_units = var.filter_organizational_units
+  } : null
+
   aws_matchers = [
     for matcher in local.effective_aws_matchers : merge(
       {
-        types   = matcher.types
-        regions = matcher.regions
-        tags    = try(matcher.tags, { "*" : ["*"] })
-        assume_role = (
-          var.discovery_service_iam_credential_source.trust_role != null
-          ? {
-            role_arn = one(aws_iam_role.teleport_discovery_service[*].arn)
-            external_id = (
-              var.discovery_service_iam_credential_source.trust_role.external_id != ""
-              ? var.discovery_service_iam_credential_source.trust_role.external_id
-              : null
-            )
-          }
-          : null
-        )
+        types       = matcher.types
+        regions     = matcher.regions
+        tags        = try(matcher.tags, { "*" : ["*"] })
+        assume_role = local.assume_role != {} ? local.assume_role : null
         integration = (
           var.discovery_service_iam_credential_source.use_oidc_integration
           ? try(teleport_integration.aws_oidc[0].metadata.name, local.teleport_integration_name)
           : null
         )
+        organization = local.organization
       },
       contains(matcher.types, "ec2") ? {
         install = {
@@ -115,6 +128,12 @@ resource "teleport_discovery_config" "aws" {
         && !var.discovery_service_iam_credential_source.use_oidc_integration
       )
       error_message = "The Discovery Service running in a Teleport Cloud cluster must use OIDC integration credentials. Either set discovery_service_iam_credential_source.use_oidc_integration to true or set teleport_discovery_group_name to a discovery group that is not `cloud-discovery-group`."
+    }
+    precondition {
+      condition = !local.organization_deployment || alltrue([for matcher in local.effective_aws_matchers :
+        toset(matcher.types) == toset(["ec2"])
+      ])
+      error_message = "AWS Organization discovery is only supported for EC2 resources. Please remove any non-EC2 from your match_aws_resource_types or aws_matchers, or disable organization-wide discovery."
     }
   }
 
