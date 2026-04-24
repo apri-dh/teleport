@@ -591,7 +591,7 @@ impl Client {
         let messages: ClientResult<CliprdrSvcMessages<ironrdp_cliprdr::Client>> =
             task::spawn_blocking(move || {
                 let mut x224_processor = Self::x224_lock(&processor)?;
-                let cliprdr = Self::get_svc_processor::<CliprdrClient>(&mut x224_processor)?;
+                let cliprdr = Self::get_svc_processor_mut::<CliprdrClient>(&mut x224_processor)?;
                 Ok(fun.call(cliprdr)?)
             })
             .await?;
