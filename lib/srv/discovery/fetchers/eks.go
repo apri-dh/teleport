@@ -54,25 +54,25 @@ import (
 	kubeutils "github.com/gravitational/teleport/lib/kube/utils"
 	"github.com/gravitational/teleport/lib/services"
 	"github.com/gravitational/teleport/lib/srv/discovery/common"
+	"github.com/gravitational/teleport/lib/utils"
 )
 
 const (
 	concurrencyLimit = 5
 )
 
+const callerIdentityTTL = 15 * time.Minute
+
 type eksFetcher struct {
 	EKSFetcherConfig
 
-	callerIdentityMu sync.Mutex
-	callerIdentity   string
+	callerIdentityCache *utils.FnCache
 }
 
 // regionalFetcher discovers EKS clusters in a single AWS region.
 type regionalFetcher struct {
 	matcher           types.AWSMatcher
 	logger            *slog.Logger
-	clock             clockwork.Clock
-	cfg               aws.Config
 	eks               EKSClient
 	stsPresign        STSPresignClient
 	callerIdentity    string
@@ -127,8 +127,6 @@ type EKSFetcherConfig struct {
 	DiscoveryConfigName string
 	// Logger is the logger.
 	Logger *slog.Logger
-	// Clock is the clock.
-	Clock clockwork.Clock
 }
 
 // CheckAndSetDefaults validates and sets the defaults values.
@@ -148,10 +146,6 @@ func (c *EKSFetcherConfig) CheckAndSetDefaults() error {
 
 	if c.Logger == nil {
 		c.Logger = slog.With(teleport.ComponentKey, "fetcher:eks")
-	}
-
-	if c.Clock == nil {
-		c.Clock = clockwork.NewRealClock()
 	}
 
 	return nil
@@ -191,7 +185,17 @@ func NewEKSFetcher(cfg EKSFetcherConfig) (common.Fetcher, error) {
 	if err := cfg.CheckAndSetDefaults(); err != nil {
 		return nil, trace.Wrap(err)
 	}
-	return &eksFetcher{EKSFetcherConfig: cfg}, nil
+	callerIdentityCache, err := utils.NewFnCache(utils.FnCacheConfig{
+		TTL:         callerIdentityTTL,
+		ReloadOnErr: true,
+	})
+	if err != nil {
+		return nil, trace.Wrap(err)
+	}
+	return &eksFetcher{
+		EKSFetcherConfig:    cfg,
+		callerIdentityCache: callerIdentityCache,
+	}, nil
 }
 
 // assumeRole returns the matcher's AssumeRole as a value, zero when unset.
@@ -208,25 +212,27 @@ func (a *eksFetcher) credentialOpts() []awsconfig.OptionsFn {
 	return getAWSOpts(a.assumeRole(), a.Matcher.Integration)
 }
 
-// ensureCallerIdentity resolves and caches the fetcher's AWS caller identity.
-// Only success is cached so failures will be retried on the next call.
-func (a *eksFetcher) ensureCallerIdentity(ctx context.Context, cfg aws.Config) {
-	a.callerIdentityMu.Lock()
-	defer a.callerIdentityMu.Unlock()
-	if a.callerIdentity != "" {
-		return
-	}
-	if a.Matcher.AssumeRole != nil && a.Matcher.AssumeRole.RoleARN != "" {
-		a.callerIdentity = a.Matcher.AssumeRole.RoleARN
-		return
-	}
-	stsClient := a.ClientGetter.GetAWSSTSClient(cfg)
-	identity, err := stsClient.GetCallerIdentity(ctx, &sts.GetCallerIdentityInput{})
+// resolveCallerIdentity resolves and caches the fetcher's AWS caller identity.
+// The cache has a 15-min TTL so underlying identity changes don't need a restart.
+// Failures trigger a retry on the next call.
+func (a *eksFetcher) resolveCallerIdentity(ctx context.Context, cfg aws.Config) string {
+	identity, err := utils.FnCacheGet(ctx, a.callerIdentityCache, "",
+		func(ctx context.Context) (string, error) {
+			if a.Matcher.AssumeRole != nil && a.Matcher.AssumeRole.RoleARN != "" {
+				return a.Matcher.AssumeRole.RoleARN, nil
+			}
+			stsClient := a.ClientGetter.GetAWSSTSClient(cfg)
+			out, err := stsClient.GetCallerIdentity(ctx, &sts.GetCallerIdentityInput{})
+			if err != nil {
+				return "", trace.Wrap(err)
+			}
+			return convertAssumedRoleToIAMRole(aws.ToString(out.Arn)), nil
+		})
 	if err != nil {
 		a.Logger.WarnContext(ctx, "Failed to resolve AWS caller identity", "error", err)
-		return
+		return ""
 	}
-	a.callerIdentity = convertAssumedRoleToIAMRole(aws.ToString(identity.Arn))
+	return identity
 }
 
 // GetIntegration returns the integration name that is used for getting credentials of the fetcher.
@@ -307,23 +313,25 @@ func (a *eksFetcher) newRegionalFetcher(ctx context.Context, region string) (*re
 		return nil, trace.Wrap(err)
 	}
 
-	a.ensureCallerIdentity(ctx, cfg)
-
-	setupAccessForARN := a.Matcher.SetupAccessForARN
-	if setupAccessForARN == "" {
-		setupAccessForARN = a.callerIdentity
+	rf := &regionalFetcher{
+		matcher:    a.Matcher,
+		logger:     a.Logger,
+		eks:        a.ClientGetter.GetAWSEKSClient(cfg),
+		stsPresign: a.ClientGetter.GetAWSSTSPresignClient(cfg),
 	}
 
-	return &regionalFetcher{
-		matcher:           a.Matcher,
-		logger:            a.Logger,
-		clock:             a.Clock,
-		cfg:               cfg,
-		eks:               a.ClientGetter.GetAWSEKSClient(cfg),
-		stsPresign:        a.ClientGetter.GetAWSSTSPresignClient(cfg),
-		callerIdentity:    a.callerIdentity,
-		setupAccessForARN: setupAccessForARN,
-	}, nil
+	// Integration matchers handle cluster access through a separate flow,
+	// so caller-identity resolution and setup-ARN wiring are skipped.
+	if a.Matcher.Integration != "" {
+		return rf, nil
+	}
+
+	rf.callerIdentity = a.resolveCallerIdentity(ctx, cfg)
+	rf.setupAccessForARN = a.Matcher.SetupAccessForARN
+	if rf.setupAccessForARN == "" {
+		rf.setupAccessForARN = rf.callerIdentity
+	}
+	return rf, nil
 }
 
 // FindClusters lists EKS clusters in this region, filters them against the
@@ -432,7 +440,7 @@ func (r *regionalFetcher) getMatchingKubeCluster(ctx context.Context, clusterNam
 	}
 
 	// If no access configuration is required, return the cluster.
-	if r.setupAccessForARN == "" || rsp.Cluster.AccessConfig == nil || r.matcher.Integration != "" {
+	if r.setupAccessForARN == "" || rsp.Cluster.AccessConfig == nil {
 		return cluster, nil
 	}
 
@@ -450,7 +458,6 @@ func (r *regionalFetcher) getMatchingKubeCluster(ctx context.Context, clusterNam
 			Discovery: &types.KubernetesClusterDiscoveryStatus{
 				Aws: &types.KubernetesClusterAWSStatus{
 					SetupAccessForArn:    r.setupAccessForARN,
-					Integration:          r.matcher.Integration,
 					DiscoveryAssumedRole: assumedRole,
 				},
 			},
@@ -613,7 +620,7 @@ func (r *regionalFetcher) temporarilyGainAdminAccessAndCreateRole(ctx context.Co
 		return trace.Wrap(err, "unable to associate EKS Access Policy to cluster %q", aws.ToString(cluster.Name))
 	}
 
-	timeout := r.clock.NewTimer(60 * time.Second)
+	timeout := time.NewTimer(60 * time.Second)
 	defer timeout.Stop()
 forLoop:
 	for {
@@ -625,9 +632,9 @@ forLoop:
 			break
 		}
 		select {
-		case <-timeout.Chan():
+		case <-timeout.C:
 			break forLoop
-		case <-r.clock.After(5 * time.Second):
+		case <-time.After(5 * time.Second):
 
 		}
 
@@ -660,7 +667,7 @@ func (r *regionalFetcher) createKubeClient(ctx context.Context, cluster *ekstype
 	if r.stsPresign == nil {
 		return nil, trace.BadParameter("STS presign client is not set")
 	}
-	token, _, err := kubeutils.GenAWSEKSToken(ctx, r.stsPresign, aws.ToString(cluster.Name), r.clock)
+	token, _, err := kubeutils.GenAWSEKSToken(ctx, r.stsPresign, aws.ToString(cluster.Name), clockwork.NewRealClock())
 	if err != nil {
 		return nil, trace.Wrap(err, "unable to generate EKS token for cluster %q", aws.ToString(cluster.Name))
 	}
@@ -823,7 +830,6 @@ type DeleteKubernetesDanglingResourcesConfig struct {
 	Cluster types.KubeCluster
 
 	// Logger is used for logging cleanup operations and errors.
-	// If not provided, a default logger with component "fetcher:eks" will be used.
 	Logger *slog.Logger
 }
 
