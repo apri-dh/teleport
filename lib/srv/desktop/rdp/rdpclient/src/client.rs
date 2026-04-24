@@ -62,7 +62,7 @@ use ironrdp_session::SessionErrorKind::Reason;
 use ironrdp_session::{reason_err, SessionError, SessionResult};
 use ironrdp_svc::{SvcMessage, SvcProcessor, SvcProcessorMessages};
 use ironrdp_tokio::{single_sequence_step_read, Framed, FramedWrite, TokioStream};
-use log::{debug, error, warn};
+use log::{debug, info, error, warn};
 use rand::{Rng, TryRngCore};
 use std::error::Error;
 use std::fmt::{Debug, Display, Formatter};
@@ -736,9 +736,14 @@ impl Client {
         // Determine whether to withhold the resize or perform it immediately.
         let action = {
             let x224_processor = Self::x224_lock(&x224_processor)?;
-            let dvc = x224_processor.get_dvc::<DisplayControlClient>().ok_or(
-                ClientError::InternalError("DisplayControlClient not found".to_string()),
-            )?;
+
+            // Our DisplayControlClient is lazily initialized and added as a svc_processor
+            // once the dynamic channel for display control is opened and server capabilities are
+            // received. Failure to acquire the DVC is normal until this point in the connection setup.
+            let Some(dvc) = x224_processor.get_dvc::<DisplayControlClient>() else {
+                info!("DisplayControlClient is not yet available");
+                return Ok(())
+            };
 
             if dvc.is_open() {
                 // Resize channel is open, perform the resize immediately.
