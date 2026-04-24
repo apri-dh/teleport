@@ -63,8 +63,8 @@ const (
 type eksFetcher struct {
 	EKSFetcherConfig
 
-	callerIdentityOnce sync.Once
-	callerIdentity     string
+	callerIdentityMu sync.Mutex
+	callerIdentity   string
 }
 
 // regionalFetcher discovers EKS clusters in a single AWS region.
@@ -208,22 +208,25 @@ func (a *eksFetcher) credentialOpts() []awsconfig.OptionsFn {
 	return getAWSOpts(a.assumeRole(), a.Matcher.Integration)
 }
 
-// ensureCallerIdentity resolves the fetcher's AWS caller identity at most
-// once per fetcher lifetime, using the supplied region config.
+// ensureCallerIdentity resolves and caches the fetcher's AWS caller identity.
+// Only success is cached so failures will be retried on the next call.
 func (a *eksFetcher) ensureCallerIdentity(ctx context.Context, cfg aws.Config) {
-	a.callerIdentityOnce.Do(func() {
-		if a.Matcher.AssumeRole != nil && a.Matcher.AssumeRole.RoleARN != "" {
-			a.callerIdentity = a.Matcher.AssumeRole.RoleARN
-			return
-		}
-		stsClient := a.ClientGetter.GetAWSSTSClient(cfg)
-		identity, err := stsClient.GetCallerIdentity(ctx, &sts.GetCallerIdentityInput{})
-		if err != nil {
-			a.Logger.WarnContext(ctx, "Failed to resolve AWS caller identity", "error", err)
-			return
-		}
-		a.callerIdentity = convertAssumedRoleToIAMRole(aws.ToString(identity.Arn))
-	})
+	a.callerIdentityMu.Lock()
+	defer a.callerIdentityMu.Unlock()
+	if a.callerIdentity != "" {
+		return
+	}
+	if a.Matcher.AssumeRole != nil && a.Matcher.AssumeRole.RoleARN != "" {
+		a.callerIdentity = a.Matcher.AssumeRole.RoleARN
+		return
+	}
+	stsClient := a.ClientGetter.GetAWSSTSClient(cfg)
+	identity, err := stsClient.GetCallerIdentity(ctx, &sts.GetCallerIdentityInput{})
+	if err != nil {
+		a.Logger.WarnContext(ctx, "Failed to resolve AWS caller identity", "error", err)
+		return
+	}
+	a.callerIdentity = convertAssumedRoleToIAMRole(aws.ToString(identity.Arn))
 }
 
 // GetIntegration returns the integration name that is used for getting credentials of the fetcher.

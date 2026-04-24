@@ -255,6 +255,96 @@ func TestEKSFetcher(t *testing.T) {
 	}
 }
 
+// TestEKSFetcherCallerIdentityRetriesAfterFailure tests that a transient
+// sts:GetCallerIdentity failure does not permanently disable access
+// setup for the fetcher.
+func TestEKSFetcherCallerIdentityRetriesAfterFailure(t *testing.T) {
+	const resolvedARN = "arn:aws:iam::123456789012:role/discovery"
+	cluster := &ekstypes.Cluster{
+		Name:   aws.String("test-cluster"),
+		Arn:    aws.String("arn:aws:eks:eu-west-1:123456789012:cluster/test-cluster"),
+		Status: ekstypes.ClusterStatusActive,
+		Tags:   map[string]string{"env": "prod"},
+		AccessConfig: &ekstypes.AccessConfigResponse{
+			AuthenticationMode: ekstypes.AuthenticationModeConfigMap,
+		},
+	}
+
+	stsClient := &flakySTSClient{arn: resolvedARN}
+
+	cfg := EKSFetcherConfig{
+		ClientGetter: &mockRegionalEKSClientGetterWithSTS{
+			mockRegionalEKSClientGetter: mockRegionalEKSClientGetter{
+				AWSConfigProvider: mocks.AWSConfigProvider{},
+				clientsByRegion: map[string]EKSClient{
+					"eu-west-1": &mockEKSAPI{clusters: []*ekstypes.Cluster{cluster}},
+				},
+			},
+			stsClient: stsClient,
+		},
+		Matcher: types.AWSMatcher{
+			Regions: []string{"eu-west-1"},
+			Tags:    types.Labels{types.Wildcard: []string{types.Wildcard}},
+		},
+		Logger: logtest.NewLogger(),
+	}
+	fetcher, err := NewEKSFetcher(cfg)
+	require.NoError(t, err)
+
+	// STS fails on first call, caller identity stays empty, status is
+	// not populated because setupAccessForARN is also empty.
+	resources, err := fetcher.Get(context.Background())
+	require.NoError(t, err)
+	require.Len(t, resources, 1)
+	first := resources[0].(*DiscoveredEKSCluster)
+	require.Nil(t, awsDiscoveryStatus(first))
+
+	// The fetcher should re-attempt after the first failure
+	resources, err = fetcher.Get(context.Background())
+	require.NoError(t, err)
+	require.Len(t, resources, 1)
+	second := resources[0].(*DiscoveredEKSCluster)
+	awsStatus := awsDiscoveryStatus(second)
+	require.NotNil(t, awsStatus)
+	require.Equal(t, resolvedARN, awsStatus.SetupAccessForArn)
+	require.Equal(t, 2, stsClient.calls, "expected STS to be re-attempted after the first failure")
+}
+
+func awsDiscoveryStatus(c *DiscoveredEKSCluster) *types.KubernetesClusterAWSStatus {
+	status := c.GetStatus()
+	if status == nil || status.Discovery == nil {
+		return nil
+	}
+	return status.Discovery.Aws
+}
+
+// flakySTSClient fails GetCallerIdentity on the first call
+type flakySTSClient struct {
+	arn   string
+	calls int
+}
+
+func (m *flakySTSClient) GetCallerIdentity(context.Context, *sts.GetCallerIdentityInput, ...func(*sts.Options)) (*sts.GetCallerIdentityOutput, error) {
+	m.calls++
+	if m.calls <= 1 {
+		return nil, errors.New("transient sts error")
+	}
+	return &sts.GetCallerIdentityOutput{Arn: aws.String(m.arn)}, nil
+}
+
+func (*flakySTSClient) AssumeRole(context.Context, *sts.AssumeRoleInput, ...func(*sts.Options)) (*sts.AssumeRoleOutput, error) {
+	panic("not implemented")
+}
+
+type mockRegionalEKSClientGetterWithSTS struct {
+	mockRegionalEKSClientGetter
+	stsClient STSClient
+}
+
+func (g *mockRegionalEKSClientGetterWithSTS) GetAWSSTSClient(aws.Config) STSClient {
+	return g.stsClient
+}
+
 type mockSTSPresignAPI struct{}
 
 func (a *mockSTSPresignAPI) PresignGetCallerIdentity(ctx context.Context, params *sts.GetCallerIdentityInput, optFns ...func(*sts.PresignOptions)) (*v4.PresignedHTTPRequest, error) {
