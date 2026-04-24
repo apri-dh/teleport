@@ -29,7 +29,7 @@ use ironrdp_cliprdr::{Cliprdr, CliprdrClient, CliprdrSvcMessages};
 use ironrdp_connector::connection_activation::ConnectionActivationState;
 use ironrdp_connector::credssp::KerberosConfig;
 use ironrdp_connector::{
-    Config, ConnectorError, ConnectorErrorKind, Credentials, DesktopSize, SmartCardIdentity,
+    Config, ConnectorError, ConnectorErrorKind, Credentials, DesktopSize, Sequence, SmartCardIdentity
 };
 use ironrdp_core::{encode_vec, EncodeError};
 use ironrdp_core::{function, WriteBuf};
@@ -230,15 +230,15 @@ impl Client {
             .map_err(ClientError::UrlError)?
             .map(|kdc_url| KerberosConfig {
                 kdc_proxy_url: Some(kdc_url),
-                hostname: params.computer_name.clone(),
+                hostname: params.computer_name.as_deref().unwrap_or("missing.computer.name").to_string(),
             });
         let connection_result = ironrdp_tokio::connect_finalize(
             upgraded,
-            &mut rdp_stream,
             connector,
+            &mut rdp_stream,
+            &mut network_client,
             params.computer_name.unwrap_or(server_addr).into(),
             server_public_key,
-            Some(&mut network_client),
             kerberos_config,
         )
         .await?;
@@ -262,6 +262,7 @@ impl Client {
             connection_result.static_channels,
             connection_result.user_channel_id,
             connection_result.io_channel_id,
+            connection_result.share_id,
             connection_result.connection_activation,
         )));
 
@@ -393,7 +394,7 @@ impl Client {
                                         user_channel_id,
                                         desktop_size,
                                         ..
-                                    } = sequence.state
+                                    } = sequence.connection_activation_state()
                                     {
                                         // Upon completing the activation sequence, register the io/user channels
                                         // and desktop size with the client, just like we do upon receiving the
@@ -1497,6 +1498,11 @@ fn create_config(params: &ConnectParams, pin: String, cgo_handle: CgoHandle) -> 
         desktop_scale_factor: 100,
         license_cache: Some(Arc::new(GoLicenseCache { cgo_handle })),
         hardware_id: Some(params.client_id),
+        alternate_shell: "".to_string(),
+        work_dir: "".to_string(),
+        // TODO (rhammonds): Try compression sometime?
+        compression_type: None,
+        multitransport_flags: None,
     }
 }
 
@@ -1548,18 +1554,18 @@ impl Display for ClientError {
         match self {
             ClientError::Tcp(e) => Display::fmt(e, f),
             ClientError::Rdp(e) => Display::fmt(e, f),
-            ClientError::SessionError(e) => match &e.kind {
+            ClientError::SessionError(e) => match &e.kind() {
                 Reason(reason) => Display::fmt(reason, f),
                 _ => Display::fmt(e, f),
             },
             // TODO(zmb3, probakowski): improve the formatting on the IronRDP side
             // https://github.com/Devolutions/IronRDP/blob/master/crates/ironrdp-connector/src/lib.rs#L263
-            ClientError::ConnectorError(e) => match &e.kind {
+            ClientError::ConnectorError(e) => match &e.kind() {
                 ConnectorErrorKind::Credssp(e) => {
                     write!(f, "CredSSP {:?}: {}", e.error_type, e.description)
                 }
                 ConnectorErrorKind::Custom => {
-                    write!(f, "Error: {}", e.context)?;
+                    write!(f, "Error: {}", e.report())?;
                     if let Some(src) = e.source() {
                         write!(f, " ({})", src)
                     } else {
