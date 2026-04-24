@@ -58,6 +58,14 @@ impl RdpDecoder {
                 io_channel_id: 0,
                 user_channel_id: 0,
                 pointer_software_rendering: false,
+                // TODO (rhammonds): Our RDP doesn't enable compression, but we
+                // may want to plumb this through as an argument to RdpDecoder::new()
+                // in case that's something we want to support later.
+                bulk_decompressor: None,
+                // share_id is important for live RDP sessions
+                // (see https://github.com/Devolutions/IronRDP/pull/1147)
+                // but doesn't need to be set for our decoder.
+                share_id: 0,
             }
             .build(),
             cursor_state: Default::default(),
