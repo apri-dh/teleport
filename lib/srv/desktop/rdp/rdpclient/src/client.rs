@@ -409,7 +409,15 @@ impl Client {
                                         break;
                                     }
                                 }
-                            }
+                            },
+                            ProcessorOutput::AutoDetect(req) => {
+                                // These are allegedly handled automatically internally,
+                                // so we'll just log them in case they're useful for debugging.
+                                debug!("received autodetect request: {:?}", req);
+                            },
+                            ProcessorOutput::MultitransportRequest(_) => error!("Received unsupported multi-transport request"),
+                            ProcessorOutput::PointerUpdate(_) => error!("Received unsupported slow-path pointer update"),
+                            ProcessorOutput::GraphicsUpdate(_) => error!("Received unsupported slow-path graphics update"),
                         }
                     }
                 }
