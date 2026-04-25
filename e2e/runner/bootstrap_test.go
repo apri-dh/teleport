@@ -70,7 +70,8 @@ spec:
 	}
 }
 
-// TestReadRoleFileNameNotFirst ensures metadata.name parses when other fields appear before it.
+// TestReadRoleFileNameNotFirst ensures metadata.name parses when other fields
+// appear before it.
 func TestReadRoleFileNameNotFirst(t *testing.T) {
 	e2eDir := t.TempDir()
 	rolesDir := createDir(t, e2eDir, "testdata", "roles")
@@ -96,7 +97,8 @@ spec:
 	}
 }
 
-// TestReadRoleFileRejectsTraversal ensures filenames from test code can't escape the roles directory.
+// TestReadRoleFileRejectsTraversal ensures filenames from test code can't
+// escape the roles directory.
 func TestReadRoleFileRejectsTraversal(t *testing.T) {
 	e2eDir := t.TempDir()
 	createDir(t, e2eDir, "testdata", "roles")
