@@ -51,9 +51,6 @@ export function AlertDropdown({ alerts, onRemoveAlert, openUpward }: Props) {
     });
   });
 
-  // TODO: fix icon color below: probably want black for both themes
-  // in the case where we have > 0 alerts
-
   return (
     <>
       <HoverTooltip
@@ -107,7 +104,7 @@ export function AlertDropdown({ alerts, onRemoveAlert, openUpward }: Props) {
   );
 }
 
-const StyledButton = styled(Button)<{ noAlertsBackground?: string }>`
+const StyledButton = styled(Button) <{ noAlertsBackground?: string }>`
   color: ${({ theme }) => theme.colors.light};
   min-height: 0;
   height: ${({ theme }) => theme.fontSizes[7] + 'px'};
@@ -118,13 +115,13 @@ const StyledButton = styled(Button)<{ noAlertsBackground?: string }>`
   &:hover,
   &:focus {
     background-color: ${props =>
-      props.hasAlerts
-        ? props.theme.colors.warning.hover
-        : (props.noAlertsBackground ?? props.theme.colors.spotBackground[2])};
+    props.hasAlerts
+      ? props.theme.colors.warning.hover
+      : (props.noAlertsBackground ?? props.theme.colors.spotBackground[2])};
   }
 `;
 
-const StyledCard = styled(Card)<{ openUpward?: boolean }>`
+const StyledCard = styled(Card) <{ openUpward?: boolean }>`
   display: flex;
   flex-direction: column;
   position: absolute;
