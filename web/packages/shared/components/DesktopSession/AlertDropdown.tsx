@@ -28,13 +28,7 @@ import {
 } from 'shared/components/ToastNotification';
 import { useClickOutside } from 'shared/hooks/useClickOutside';
 
-export function AlertDropdown({
-  alerts,
-  onRemoveAlert,
-  openUpward,
-  iconColor, // TODO: see if we can remove these two fields
-  noAlertsBackground,
-}: Props) {
+export function AlertDropdown({ alerts, onRemoveAlert, openUpward }: Props) {
   const [showDropdown, setShowDropdown] = useState(false);
   const ref = useRef(null);
   const theme = useTheme();
@@ -68,19 +62,13 @@ export function AlertDropdown({
       >
         <StyledButton
           hasAlerts={alerts.length > 0}
-          noAlertsBackground={noAlertsBackground}
           px={2}
           onClick={toggleDropdown}
         >
           <Flex
             alignItems="center"
             justifyContent="space-between"
-            color={
-              iconColor ??
-              (alerts.length
-                ? theme.colors.text.main
-                : theme.colors.text.disabled)
-            }
+            color={theme.colors.text.main}
           >
             <Warning size={20} mr={2} /> {alerts.length}
           </Flex>
@@ -162,6 +150,4 @@ type Props = {
   alerts: ToastNotificationItem[];
   onRemoveAlert: (id: string) => void;
   openUpward?: boolean;
-  iconColor?: string;
-  noAlertsBackground?: string;
 };

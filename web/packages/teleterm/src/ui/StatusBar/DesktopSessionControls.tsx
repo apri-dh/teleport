@@ -64,13 +64,13 @@ export function DesktopSessionControls({
           color={iconColor(status.isSharingClipboard)}
         />
       </HoverTooltip>
-      <AlertDropdown
-        alerts={status.alerts}
-        onRemoveAlert={status.onRemoveAlert}
-        openUpward
-        iconColor={theme.colors.text.slightlyMuted}
-        noAlertsBackground="transparent"
-      />
+      {!!status?.alerts?.length && (
+        <AlertDropdown
+          alerts={status.alerts}
+          onRemoveAlert={status.onRemoveAlert}
+          openUpward
+        />
+      )}
       <Divider />
       <ActionMenu
         showShareDirectory={
