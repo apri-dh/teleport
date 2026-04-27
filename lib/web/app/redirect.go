@@ -112,13 +112,21 @@ const appRedirectHTML = `
         if (!stateValue) {
           return;
         }
-        var hashParts = window.location.hash.split('=');
-        if (hashParts.length !== 2 || hashParts[0] !== '#value') {
+        // The URL fragment carries two named values: 'value' is the
+        // session cookie value, and 'fragment' (optional) is the
+        // user's original URL fragment. Browsers do not send the
+        // fragment to the server (RFC 9110 7.1), so values placed
+        // here stay client-side. The original fragment is
+        // reattached to the final navigation below.
+        var hashParams = new URLSearchParams(window.location.hash.slice(1));
+        var cookieValue = hashParams.get('value');
+        if (!cookieValue) {
           return;
         }
+        var origFragment = hashParams.get('fragment');
         const data = {
           state_value: stateValue,
-          cookie_value: hashParts[1],
+          cookie_value: cookieValue,
           subject_cookie_value: subjectValue,
           required_apps: params.get('required-apps'),
         };
@@ -134,18 +142,31 @@ const appRedirectHTML = `
           if (response.ok) {
             const nextAppRedirectUrl = response.headers.get("X-Teleport-NextAppRedirectUrl")
             if (nextAppRedirectUrl) {
-              window.location.replace(nextAppRedirectUrl)
+              try {
+                var nextUrl = new URL(nextAppRedirectUrl)
+                if (origFragment) {
+                  nextUrl.hash = origFragment
+                }
+                window.location.replace(nextUrl.toString())
+              } catch (error) {
+                window.location.replace(nextAppRedirectUrl)
+              }
               return;
             }
             try {
               // if a path parameter was passed through the redirect, append that path to the current origin
               if (path) {
                 var redirectUrl = new URL(path, currentOrigin)
+                if (origFragment) {
+                  redirectUrl.hash = origFragment
+                }
                 if (redirectUrl.origin === currentOrigin) {
                   window.location.replace(redirectUrl.toString())
                 } else {
                   window.location.replace(currentOrigin)
                 }
+              } else if (origFragment) {
+                window.location.replace(currentOrigin + '#' + origFragment)
               } else {
                 window.location.replace(currentOrigin)
               }

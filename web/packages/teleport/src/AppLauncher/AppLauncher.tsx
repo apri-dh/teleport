@@ -109,18 +109,6 @@ export function AppLauncher({
           if (queryParams.has('query')) {
             path += '?' + queryParams.get('query');
           }
-
-          // Append the browser's fragment if one is present. On the first
-          // redirect leg the browser keeps the fragment in location.hash
-          // (fragments are never sent to the server), so hash is non-empty
-          // and we append it. On the second leg the fragment was already
-          // encoded as %23 inside the path query parameter, so hash is
-          // empty and the condition short-circuits without appending. The
-          // path.includes('#') check is a secondary guard for the unlikely
-          // case where a real fragment coexists with a decoded # in path.
-          if (hash && !path.includes('#')) {
-            path += hash;
-          }
         }
 
         let requiredApps = resolvedApp.requiredAppFQDNs || [];
@@ -138,6 +126,18 @@ export function AppLauncher({
             params,
             requiredApps,
           });
+          // Carry the original URL fragment through the auth flow as
+          // a URL fragment, not a query parameter. Browsers do not
+          // send fragments to the server (RFC 9110 § 7.1), so any
+          // sensitive values an app places in the fragment (for
+          // example an OAuth implicit-flow `#access_token=...` or a
+          // password-reset token) stay client-side. The browser will
+          // re-attach the fragment to the proxy's 302 response back
+          // to the launcher (RFC 9110 § 15.4), letting the second
+          // leg pick it up again from `useLocation().hash`.
+          if (hash) {
+            url.hash = hash;
+          }
           windowLocation.replace(url.toString());
           return;
         }
@@ -167,7 +167,20 @@ export function AppLauncher({
         if (requiredApps.length > 1) {
           url.searchParams.set('required-apps', requiredApps.join(','));
         }
-        url.hash = `#value=${session.cookieValue}`;
+
+        // Pass the session cookie value and the original URL fragment
+        // through the URL fragment of the redirect target so neither
+        // hits the proxy as a query parameter. The server already
+        // relies on this for `value` (the session cookie); `fragment`
+        // extends the same pattern to preserve the user's original
+        // fragment without exposing it to proxy access logs. The
+        // inline JS in `lib/web/app/redirect.go` parses both fields.
+        const hashParams = new URLSearchParams();
+        hashParams.set('value', session.cookieValue);
+        if (hash) {
+          hashParams.set('fragment', hash.slice(1));
+        }
+        url.hash = hashParams.toString();
 
         if (path) {
           url.searchParams.set('path', path);
