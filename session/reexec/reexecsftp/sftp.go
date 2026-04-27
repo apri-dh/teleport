@@ -402,80 +402,87 @@ func openFD(fd uintptr, name string) (*os.File, error) {
 	return file, nil
 }
 
-// openRootNoFollow opens an [*os.Root] without following symlinks in any part of the path.
-func openRootNoFollow(dir string) (*os.Root, error) {
+// openFileNoFollow opens a file without following symlinks in any part of the path.
+func openFileNoFollow(file string, flags int, mode os.FileMode) (*os.File, error) {
+	dir, filename := filepath.Split(file)
 	absDir, err := filepath.Abs(dir)
 	if err != nil {
 		return nil, err
 	}
-	root, err := os.OpenRoot(string(os.PathSeparator))
 	relDir, err := filepath.Rel(string(os.PathSeparator), absDir)
 	if err != nil {
 		return nil, err
 	}
-
-	// Open each directory one at a time to ensure no symlinks are followed.
-	for part := range strings.SplitSeq(relDir, string(os.PathSeparator)) {
-		oldRoot := root
-		root, err = root.OpenRoot(part)
-		closeErr := oldRoot.Close()
-		if err != nil {
-			return nil, err
-		} else if closeErr != nil {
-			_ = root.Close()
-			return nil, closeErr
-		}
-	}
-	return root, nil
-}
-
-// openFileNoFollow opens a file without following symlinks in any part of the path.
-func openFileNoFollow(file string, flags int, mode os.FileMode) (*os.File, error) {
-	dir, filename := filepath.Split(file)
-	root, err := openRootNoFollow(dir)
+	pathParts := strings.Split(relDir, string(os.PathSeparator))
+	dirFd, err := unix.Open(string(os.PathSeparator), unix.O_NOFOLLOW|unix.O_DIRECTORY|unix.O_CLOEXEC, 0)
 	if err != nil {
 		return nil, err
 	}
-	defer root.Close()
-	return root.OpenFile(filename, flags, mode)
+	// Open each directory one at a time to ensure no symlinks are followed.
+	for _, part := range pathParts {
+		oldFd := dirFd
+		dirFd, err = unix.Openat(dirFd, part, unix.O_NOFOLLOW|unix.O_DIRECTORY|unix.O_CLOEXEC, 0)
+		closeErr := unix.Close(oldFd)
+		if err != nil {
+			return nil, err
+		} else if closeErr != nil {
+			_ = unix.Close(dirFd)
+			return nil, closeErr
+		}
+	}
+	fd, err := unix.Openat(dirFd, filename, flags|unix.O_NOFOLLOW|unix.O_CLOEXEC, uint32(mode))
+	closeErr := unix.Close(dirFd)
+	if err != nil {
+		return nil, err
+	} else if closeErr != nil {
+		_ = unix.Close(fd)
+		return nil, closeErr
+	}
+	return os.NewFile(uintptr(fd), file), nil
 }
 
 // setstatNoFollow sets file attributes on a file without following any symlinks.
 func setstatNoFollow(file string, attrFlags sftp.FileAttrFlags, attrs *sftp.FileStat) error {
-	dir, filename := path.Split(file)
-	root, err := openRootNoFollow(dir)
+	f, err := openFileNoFollow(file, os.O_WRONLY, 0)
 	if err != nil {
 		return err
 	}
-	defer root.Close()
-
+	defer f.Close()
 	if attrFlags.Permissions {
-		if err := root.Chmod(filename, attrs.FileMode()); err != nil {
+		if err := f.Chmod(attrs.FileMode()); err != nil {
 			return err
 		}
 	}
 	if attrFlags.UidGid {
-		if err := root.Chown(filename, int(attrs.UID), int(attrs.GID)); err != nil {
+		if err := f.Chown(int(attrs.UID), int(attrs.GID)); err != nil {
 			return err
 		}
 	}
 	if attrFlags.Size {
-		f, err := root.OpenFile(filename, os.O_WRONLY, 0)
-		if err != nil {
+		if err := f.Truncate(int64(attrs.Size)); err != nil {
 			return err
 		}
-		err = f.Truncate(int64(attrs.Size))
-		closeErr := f.Close()
-		if err != nil {
-			return err
-		} else if closeErr != nil {
-			return closeErr
-		}
-
 	}
 	if attrFlags.Acmodtime {
-		if err := root.Chtimes(filename, time.Unix(int64(attrs.Atime), 0), time.Unix(int64(attrs.Mtime), 0)); err != nil {
+		syscallConn, err := f.SyscallConn()
+		if err != nil {
 			return err
+		}
+		var modifyErr error
+		ctrlErr := syscallConn.Control(func(fd uintptr) {
+			if attrFlags.Acmodtime {
+				if modifyErr = unix.Futimes(int(fd), []unix.Timeval{
+					{Sec: int64(attrs.Atime)},
+					{Sec: int64(attrs.Mtime)},
+				}); modifyErr != nil {
+					return
+				}
+			}
+		})
+		if ctrlErr != nil {
+			return ctrlErr
+		} else if modifyErr != nil {
+			return modifyErr
 		}
 	}
 	return nil

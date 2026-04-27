@@ -17,9 +17,10 @@
 package reexecsftp
 
 import (
-	"io/fs"
+	"io"
 	"os"
 	"path/filepath"
+	"syscall"
 	"testing"
 	"time"
 
@@ -177,12 +178,6 @@ func newTempDir(t *testing.T) string {
 func TestNoFollowFileOperations(t *testing.T) {
 	t.Parallel()
 
-	assertFollowErr := func(t *testing.T, err error) {
-		var pathErr *fs.PathError
-		require.ErrorAs(t, err, &pathErr)
-		require.Equal(t, "path escapes from parent", pathErr.Err.Error())
-	}
-
 	t.Run("successful on path with no symlinks", func(t *testing.T) {
 		targetFile := filepath.Join(newTempDir(t), "myfile.txt")
 
@@ -197,6 +192,13 @@ func TestNoFollowFileOperations(t *testing.T) {
 		require.NoError(t, err)
 		require.Equal(t, int64(len(fileData)), info.Size())
 		require.Equal(t, os.FileMode(0o600), info.Mode())
+
+		f, err = openFileNoFollow(targetFile, os.O_RDONLY, 0)
+		require.NoError(t, err)
+		data, err := io.ReadAll(f)
+		require.NoError(t, err)
+		require.NoError(t, f.Close())
+		require.Equal(t, []byte(fileData), data)
 
 		updatedTime := info.ModTime().Add(time.Hour).Truncate(time.Second)
 		err = setstatNoFollow(targetFile, sftp.FileAttrFlags{
@@ -226,9 +228,9 @@ func TestNoFollowFileOperations(t *testing.T) {
 		linkTarget := filepath.Join(link, "foo.txt")
 
 		_, err := openFileNoFollow(linkTarget, os.O_WRONLY|os.O_CREATE, 0o644)
-		assertFollowErr(t, err)
+		require.ErrorIs(t, err, syscall.ENOTDIR)
 		err = setstatNoFollow(linkTarget, sftp.FileAttrFlags{Permissions: true}, &sftp.FileStat{Mode: 0o600})
-		assertFollowErr(t, err)
+		require.ErrorIs(t, err, syscall.ENOTDIR)
 	})
 	t.Run("block symlink at end of path", func(t *testing.T) {
 		tempDir := newTempDir(t)
@@ -238,8 +240,8 @@ func TestNoFollowFileOperations(t *testing.T) {
 		require.NoError(t, os.Symlink(targetFile, link))
 
 		_, err := openFileNoFollow(link, os.O_WRONLY|os.O_CREATE, 0o644)
-		assertFollowErr(t, err)
+		require.ErrorIs(t, err, syscall.ELOOP)
 		err = setstatNoFollow(link, sftp.FileAttrFlags{Permissions: true}, &sftp.FileStat{Mode: 0o600})
-		assertFollowErr(t, err)
+		require.ErrorIs(t, err, syscall.ELOOP)
 	})
 }
