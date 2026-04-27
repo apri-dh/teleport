@@ -1345,7 +1345,8 @@ func deriveTeleportEqual_76(this, that *AccessReview) bool {
 			deriveTeleportEqual_33(this.Annotations, that.Annotations) &&
 			deriveTeleportEqual_114(this.ThresholdIndexes, that.ThresholdIndexes) &&
 			deriveTeleportEqual_38(this.AccessList, that.AccessList) &&
-			((this.AssumeStartTime == nil && that.AssumeStartTime == nil) || (this.AssumeStartTime != nil && that.AssumeStartTime != nil && (*(this.AssumeStartTime)).Equal(*(that.AssumeStartTime))))
+			((this.AssumeStartTime == nil && that.AssumeStartTime == nil) || (this.AssumeStartTime != nil && that.AssumeStartTime != nil && (*(this.AssumeStartTime)).Equal(*(that.AssumeStartTime)))) &&
+			this.SubmittedBy == that.SubmittedBy
 }
 
 // deriveTeleportEqual_77 returns whether this and that are equal.
@@ -1624,7 +1625,8 @@ func deriveTeleportEqual_99(this, that *AccessReviewConditions) bool {
 			deriveTeleportEqual_2(this.Roles, that.Roles) &&
 			deriveTeleportEqual_126(this.ClaimsToRoles, that.ClaimsToRoles) &&
 			this.Where == that.Where &&
-			deriveTeleportEqual_2(this.PreviewAsRoles, that.PreviewAsRoles)
+			deriveTeleportEqual_2(this.PreviewAsRoles, that.PreviewAsRoles) &&
+			deriveTeleportEqual_2(this.SubmitForUsers, that.SubmitForUsers)
 }
 
 // deriveTeleportEqual_100 returns whether this and that are equal.

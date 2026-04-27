@@ -3174,6 +3174,10 @@ message AccessReview {
     (gogoproto.nullable) = true,
     (gogoproto.jsontag) = "assume_start_time,omitempty"
   ];
+
+  // SubmittedBy is used by teleport plugins to indicate they
+  // are submitting the review on behalf of the Author.
+  string SubmittedBy = 11 [(gogoproto.jsontag) = "submitted_by,omitempty"];
 }
 
 // AccessReviewSubmission encodes the necessary parameters for submitting
@@ -4381,6 +4385,10 @@ message AccessReviewConditions {
   // while they are viewing a Resource Access Request for the purposes of
   // viewing details such as the hostname and labels of requested resources.
   repeated string PreviewAsRoles = 4 [(gogoproto.jsontag) = "preview_as_roles,omitempty"];
+
+  // SubmitForUsers is used by teleport plugins to indicate
+  // they can submit reviews on behalf of other users.
+  repeated string SubmitForUsers = 5 [(gogoproto.jsontag) = "submit_for_users,omitempty"];
 }
 
 // AccessRequestAllowedPromotion describes an allowed promotion to an Access List.

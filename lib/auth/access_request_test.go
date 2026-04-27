@@ -45,6 +45,7 @@ import (
 	"github.com/gravitational/teleport/lib/auth"
 	"github.com/gravitational/teleport/lib/auth/authclient"
 	"github.com/gravitational/teleport/lib/auth/authtest"
+	"github.com/gravitational/teleport/lib/modules"
 	"github.com/gravitational/teleport/lib/modules/modulestest"
 	"github.com/gravitational/teleport/lib/services"
 	"github.com/gravitational/teleport/lib/sshca"
@@ -126,6 +127,18 @@ func newAccessRequestTestPack(ctx context.Context, t *testing.T) *accessRequestT
 				},
 			},
 		},
+		"requesters-threshold": {
+			Allow: types.RoleConditions{
+				Request: &types.AccessRequestConditions{
+					Roles:         []string{"admins", "superadmins"},
+					SearchAsRoles: []string{"admins", "superadmins"},
+					MaxDuration:   types.Duration(services.MaxAccessDuration),
+					Thresholds: []types.AccessReviewThreshold{
+						{Approve: 2},
+					},
+				},
+			},
+		},
 		"empty": {},
 	}
 	for roleName, roleSpec := range roles {
@@ -137,11 +150,13 @@ func newAccessRequestTestPack(ctx context.Context, t *testing.T) *accessRequestT
 	}
 
 	users := map[string][]string{
-		"admin":     {"admins"},
-		"responder": {"responders"},
-		"operator":  {"operators"},
-		"requester": {"requesters"},
-		"nobody":    {"empty"},
+		"admin":               {"admins"},
+		"responder":           {"responders"},
+		"operator":            {"operators"},
+		"requester":           {"requesters"},
+		"nobody":              {"empty"},
+		"admin2":              {"admins"},
+		"requester-threshold": {"requesters-threshold"},
 	}
 	for name, roles := range users {
 		user, err := types.NewUser(name)
@@ -1789,5 +1804,110 @@ func createAccessRequestWithStartTime(t *testing.T) accessRequestWithStartTime {
 		maxDuration:                   maxDuration,
 		requesterUserName:             requesterUserName,
 		createdRequest:                createdReq,
+	}
+}
+
+func TestSubmitAccessReview_SubmitForUsers(t *testing.T) {
+	modulestest.SetTestModules(t, modulestest.Modules{TestBuildType: modules.BuildEnterprise})
+	ctx, cancel := context.WithCancel(t.Context())
+	t.Cleanup(cancel)
+
+	testPack := newAccessRequestTestPack(ctx, t)
+
+	// Create reviewers for access plugin: one without and one with review permissions.
+	_, err := authtest.CreateUser(ctx, testPack.tlsServer.Auth(), teleport.PresetAccessPluginRoleName, services.NewPresetAccessPluginRole())
+	require.NoError(t, err)
+
+	_, err = authtest.CreateUser(ctx, testPack.tlsServer.Auth(), teleport.PresetAccessPluginWithReviewRoleName, services.NewPresetAccessPluginWithReviewRole())
+	require.NoError(t, err)
+
+	tests := []struct {
+		name      string
+		authors   []string
+		states    []types.RequestState // same length as number of reviewers
+		submitter string
+		threshold bool // apply a review threshold or not
+		wantErr   error
+	}{
+		{
+			name:      "access-plugin without review",
+			authors:   []string{"admin"},
+			submitter: teleport.PresetAccessPluginRoleName,
+			wantErr:   trace.AccessDenied("user %q cannot submit reviews for %q", teleport.PresetAccessPluginRoleName, "admin"),
+		},
+		{
+			name:      "access-plugin with review; submitted for admin",
+			authors:   []string{"admin"},
+			states:    []types.RequestState{types.RequestState_APPROVED},
+			submitter: teleport.PresetAccessPluginWithReviewRoleName,
+		},
+		{
+			name:      "access-plugin with review; submitted for nobody",
+			authors:   []string{"nobody"},
+			submitter: teleport.PresetAccessPluginWithReviewRoleName,
+			wantErr:   trace.AccessDenied("user %q cannot submit reviews", "nobody"),
+		},
+		{
+			name:      "access-plugin with review; submitted for non-existent user",
+			authors:   []string{"fake-user"},
+			submitter: teleport.PresetAccessPluginWithReviewRoleName,
+			wantErr: trace.AccessDenied("user %q cannot submit reviews for %q, user could not be fetched from local store",
+				teleport.PresetAccessPluginWithReviewRoleName,
+				"fake-user",
+			),
+		},
+		{
+			name:      "access-plugin with review; submitted for multiple users",
+			authors:   []string{"admin", "admin2"},
+			states:    []types.RequestState{types.RequestState_PENDING, types.RequestState_APPROVED},
+			submitter: teleport.PresetAccessPluginWithReviewRoleName,
+			threshold: true,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+
+			// Create requester client.
+			user := "requester"
+			if tt.threshold {
+				user = "requester-threshold"
+			}
+
+			requesterClient, err := testPack.tlsServer.NewClient(authtest.TestUser(user))
+			require.NoError(t, err)
+			t.Cleanup(func() { require.NoError(t, requesterClient.Close()) })
+
+			// Create access request.
+			request, err := services.NewAccessRequest(user, "admins")
+			require.NoError(t, err)
+			request, err = requesterClient.CreateAccessRequestV2(ctx, request)
+			require.NoError(t, err)
+
+			// Create plugin author client.
+			pluginClient, err := testPack.tlsServer.NewClient(authtest.TestUser(tt.submitter))
+			require.NoError(t, err)
+			t.Cleanup(func() { require.NoError(t, pluginClient.Close()) })
+
+			// Plugin author should be able to submit for multiple human reviewers.
+			for i, author := range tt.authors {
+				review := types.AccessReviewSubmission{
+					RequestID: request.GetName(),
+					Review: types.AccessReview{
+						Author:        author,
+						SubmittedBy:   tt.submitter,
+						ProposedState: types.RequestState_APPROVED,
+					},
+				}
+				updatedRequest, err := pluginClient.SubmitAccessReview(ctx, review)
+				if tt.wantErr != nil {
+					require.ErrorIs(t, err, tt.wantErr)
+					return
+				}
+				require.NoError(t, err)
+				require.Equal(t, tt.states[i], updatedRequest.GetState())
+			}
+		})
 	}
 }

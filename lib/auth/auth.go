@@ -6312,7 +6312,7 @@ func (a *Server) SetAccessRequestState(ctx context.Context, params types.AccessR
 }
 
 // SubmitAccessReview is used to process a review of an Access Request.
-// This is implemented by Server.submitAccessRequest but this method exists
+// This is implemented by Server.submitAccessReview but this method exists
 // to provide a matching signature with the auth client. This allows the
 // hosted plugins to use the Server struct directly as a client.
 func (a *Server) SubmitAccessReview(
@@ -6375,6 +6375,7 @@ func (a *Server) submitAccessReview(
 		ProposedState:          params.Review.ProposedState.String(),
 		Reason:                 params.Review.Reason,
 		Reviewer:               params.Review.Author,
+		SubmittedBy:            params.Review.SubmittedBy,
 		MaxDuration:            req.GetMaxDuration(),
 		PromotedAccessListName: req.GetPromotedAccessListName(),
 	}

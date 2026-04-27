@@ -568,6 +568,13 @@ spec:
                           type: string
                         nullable: true
                         type: array
+                      submit_for_users:
+                        description: SubmitForUsers is used by teleport plugins to
+                          indicate they can submit reviews on behalf of other users.
+                        items:
+                          type: string
+                        nullable: true
+                        type: array
                       where:
                         description: Where is an optional predicate which further
                           limits which requests are reviewable.
@@ -1208,6 +1215,13 @@ spec:
                         type: array
                       roles:
                         description: Roles is the name of roles which may be reviewed.
+                        items:
+                          type: string
+                        nullable: true
+                        type: array
+                      submit_for_users:
+                        description: SubmitForUsers is used by teleport plugins to
+                          indicate they can submit reviews on behalf of other users.
                         items:
                           type: string
                         nullable: true
@@ -2153,6 +2167,13 @@ spec:
                           type: string
                         nullable: true
                         type: array
+                      submit_for_users:
+                        description: SubmitForUsers is used by teleport plugins to
+                          indicate they can submit reviews on behalf of other users.
+                        items:
+                          type: string
+                        nullable: true
+                        type: array
                       where:
                         description: Where is an optional predicate which further
                           limits which requests are reviewable.
@@ -2793,6 +2814,13 @@ spec:
                         type: array
                       roles:
                         description: Roles is the name of roles which may be reviewed.
+                        items:
+                          type: string
+                        nullable: true
+                        type: array
+                      submit_for_users:
+                        description: SubmitForUsers is used by teleport plugins to
+                          indicate they can submit reviews on behalf of other users.
                         items:
                           type: string
                         nullable: true

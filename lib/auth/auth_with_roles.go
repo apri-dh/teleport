@@ -3284,8 +3284,8 @@ func AuthorizeAccessReviewRequest(context authz.Context, params types.AccessRevi
 	// review author must match calling user, except in the case of the builtin admin role. we make this
 	// exception in order to allow for convenient testing with local tctl connections.
 	if !authz.HasBuiltinRole(context, string(types.RoleAdmin)) {
-		if params.Review.Author != context.User.GetName() {
-			return trace.AccessDenied("user %q cannot submit reviews on behalf of %q", context.User.GetName(), params.Review.Author)
+		if params.Review.GetSubmitter() != context.User.GetName() {
+			return trace.AccessDenied("user %q cannot submit reviews on behalf of %q", context.User.GetName(), params.Review.GetSubmitter())
 		}
 
 		// MaybeCanReviewRequests returns false positives, but it will tell us
@@ -3298,9 +3298,40 @@ func AuthorizeAccessReviewRequest(context authz.Context, params types.AccessRevi
 	return nil
 }
 
+// validateSubmitForUsersPermissions validates that the calling user (eg. plugin) has proper `submit_for_users`
+// permissions for submitting reviews for other users.
+func (a *ServerWithRoles) validateSubmitForUsersPermissions(ctx context.Context, params types.AccessReviewSubmission) error {
+	if err := a.authorizeAction(types.KindUser, types.VerbRead); err != nil {
+		return trace.Wrap(err)
+	}
+
+	user, err := a.authServer.GetUser(ctx, params.Review.Author, false)
+	if err != nil {
+		a.authServer.logger.DebugContext(ctx, "Could not submit review for another user, the user could not be fetched from local store",
+			"submitter", a.context.User.GetName(),
+			"submitted for user", params.Review.Author,
+			"error", err,
+		)
+		return trace.AccessDenied("user %q cannot submit reviews for %q, user could not be fetched from local store",
+			a.context.User.GetName(),
+			params.Review.Author,
+		)
+	}
+
+	if err := a.context.Checker.CheckSubmitForUser(a.context.User, user); err != nil {
+		a.authServer.logger.WarnContext(ctx, "Could not submit review for another user, invalid permissions",
+			"submitter", a.context.User.GetName(),
+			"submitted for user", params.Review.Author,
+			"error", err,
+		)
+		return trace.AccessDenied("user %q cannot submit reviews for %q", a.context.User.GetName(), params.Review.Author)
+	}
+	return nil
+}
+
 func (a *ServerWithRoles) SubmitAccessReview(ctx context.Context, submission types.AccessReviewSubmission) (types.AccessRequest, error) {
 	// Prevent users from submitting access reviews with the "promoted" state.
-	// Promotion is only allowed by SubmitAccessReviewAllowPromotion API in the Enterprise module.
+	// Promotion is only allowed by AccessRequestPromote API in the Enterprise module.
 	if submission.Review.ProposedState.IsPromoted() {
 		return nil, trace.BadParameter("state promoted can be only set when promoting to access list")
 	}
@@ -3319,10 +3350,21 @@ func (a *ServerWithRoles) SubmitAccessReview(ctx context.Context, submission typ
 		return nil, trace.Wrap(err)
 	}
 
+	// While the review author must match the calling user, plugins can submit reviews for other users
+	// with `submit_for_users`. If AccessReview.SubmittedBy is set, we must enforce a check
+	// that the plugin is allowed to transfer RBAC checks to the actual user.
+	if submission.Review.SubmittedBy != "" {
+		if err := a.validateSubmitForUsersPermissions(ctx, submission); err != nil {
+			return nil, trace.Wrap(err)
+		}
+	}
+
 	// note that we haven't actually enforced any access-control other than requiring
 	// the author field to match the calling user.  fine-grained permissions are evaluated
 	// under optimistic locking at the level of the backend service.  the correctness of the
 	// author field is all that needs to be enforced at this level.
+	// If the calling user is a plugin submitting for another user via `submit_for_users`,
+	// we also enforce it has permissions to transfer RBAC checks to the actual reviewer.
 
 	identity := a.context.Identity.GetIdentity()
 	return a.authServer.submitAccessReview(ctx, submission, &identity)

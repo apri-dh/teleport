@@ -799,6 +799,15 @@ func (s AccessReview) GetAccessListTitle() string {
 	return s.AccessList.Title
 }
 
+// GetSubmitter returns the identity submitting the AccessReview. This is typically `Author`,
+// but for plugins submitting for another user, the submitter is given by `SubmittedBy`.
+func (s AccessReview) GetSubmitter() string {
+	if s.SubmittedBy != "" {
+		return s.SubmittedBy
+	}
+	return s.Author
+}
+
 // IsEqual t is equivalent to the provide AccessReviewThreshold.
 func (t *AccessReviewThreshold) IsEqual(o *AccessReviewThreshold) bool {
 	return deriveTeleportEqualAccessReviewThreshold(t, o)
