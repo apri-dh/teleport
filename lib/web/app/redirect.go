@@ -142,15 +142,16 @@ const appRedirectHTML = `
           if (response.ok) {
             const nextAppRedirectUrl = response.headers.get("X-Teleport-NextAppRedirectUrl")
             if (nextAppRedirectUrl) {
-              try {
-                var nextUrl = new URL(nextAppRedirectUrl)
-                if (origFragment) {
-                  nextUrl.hash = origFragment
-                }
-                window.location.replace(nextUrl.toString())
-              } catch (error) {
-                window.location.replace(nextAppRedirectUrl)
-              }
+              // The required-app chain navigates to a different
+              // application's launcher. Do not carry the original
+              // fragment forward: it was meant for the user's
+              // originally requested app and may contain sensitive
+              // values (e.g. an OAuth implicit-flow access token or
+              // a password-reset token) that must not be exposed to
+              // intermediate apps in the chain. Fragment
+              // restoration only happens on the final navigation
+              // back to the originally requested app URL below.
+              window.location.replace(nextAppRedirectUrl)
               return;
             }
             try {
