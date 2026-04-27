@@ -34,8 +34,8 @@ importers:
         specifier: ^5.2.8
         version: 5.2.8
       '@gravitational/design-system':
-        specifier: https://github.com/gravitational/design-system/releases/download/v0.0.13/design-system.tgz
-        version: https://github.com/gravitational/design-system/releases/download/v0.0.13/design-system.tgz(@emotion/react@11.14.0(@types/react@19.2.14)(react@19.2.4))(@fontsource/ubuntu@5.2.8)(react-dom@19.2.4(react@19.2.4))(react@19.2.4)(tslib@2.8.1)(typescript@5.9.3)(zod@4.3.6)
+        specifier: https://github.com/gravitational/design-system/releases/download/v0.0.14/design-system.tgz
+        version: https://github.com/gravitational/design-system/releases/download/v0.0.14/design-system.tgz(@emotion/react@11.14.0(@types/react@19.2.14)(react@19.2.4))(@fontsource/ubuntu@5.2.8)(react-dom@19.2.4(react@19.2.4))(react@19.2.4)(tslib@2.8.1)(typescript@5.9.3)(zod@4.3.6)
       '@grpc/grpc-js':
         specifier: 1.14.3
         version: 1.14.3
@@ -2125,9 +2125,9 @@ packages:
   '@fontsource/ubuntu@5.2.8':
     resolution: {integrity: sha512-esSJCpgigwWOm4Ug9f7AMozUyBq5Iobea5C9QYsl2OlCb62wZABBUbXahHLdFv5Ru4lJCD9tUX6xEAeLwUTNBg==}
 
-  '@gravitational/design-system@https://github.com/gravitational/design-system/releases/download/v0.0.13/design-system.tgz':
-    resolution: {integrity: sha512-gH/CVUBaoJXQj5KR65ZYcoOIpY9Cxgybz+z1UrKQQY7xxYjsYgvV2bMgSpxsZQlicb7B531/DPh90+QwhZiIEg==, tarball: https://github.com/gravitational/design-system/releases/download/v0.0.13/design-system.tgz}
-    version: 0.0.13
+  '@gravitational/design-system@https://github.com/gravitational/design-system/releases/download/v0.0.14/design-system.tgz':
+    resolution: {integrity: sha512-fy566t9pzTF2Cn2ESs5X4abMDCgVWXrEkH1H2mAvyWbNZZpM/3tBcoYoHgju23rYrzGER08s9cepuTsTzGDGwA==, tarball: https://github.com/gravitational/design-system/releases/download/v0.0.14/design-system.tgz}
+    version: 0.0.14
     hasBin: true
     peerDependencies:
       '@emotion/react': '>=11'
@@ -9428,7 +9428,7 @@ snapshots:
 
   '@fontsource/ubuntu@5.2.8': {}
 
-  '@gravitational/design-system@https://github.com/gravitational/design-system/releases/download/v0.0.13/design-system.tgz(@emotion/react@11.14.0(@types/react@19.2.14)(react@19.2.4))(@fontsource/ubuntu@5.2.8)(react-dom@19.2.4(react@19.2.4))(react@19.2.4)(tslib@2.8.1)(typescript@5.9.3)(zod@4.3.6)':
+  '@gravitational/design-system@https://github.com/gravitational/design-system/releases/download/v0.0.14/design-system.tgz(@emotion/react@11.14.0(@types/react@19.2.14)(react@19.2.4))(@fontsource/ubuntu@5.2.8)(react-dom@19.2.4(react@19.2.4))(react@19.2.4)(tslib@2.8.1)(typescript@5.9.3)(zod@4.3.6)':
     dependencies:
       '@ark-ui/react': 5.35.0(react-dom@19.2.4(react@19.2.4))(react@19.2.4)
       '@chakra-ui/cli': 3.34.0(@chakra-ui/react@3.34.0(@emotion/react@11.14.0(@types/react@19.2.14)(react@19.2.4))(react-dom@19.2.4(react@19.2.4))(react@19.2.4))(typescript@5.9.3)
