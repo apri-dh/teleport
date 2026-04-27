@@ -443,7 +443,12 @@ func openFileNoFollow(file string, flags int, mode os.FileMode) (*os.File, error
 
 // setstatNoFollow sets file attributes on a file without following any symlinks.
 func setstatNoFollow(file string, attrFlags sftp.FileAttrFlags, attrs *sftp.FileStat) error {
-	f, err := openFileNoFollow(file, os.O_WRONLY, 0)
+	mode := os.O_RDONLY
+	if attrFlags.Size {
+		// Only open in write mode if needed to truncate.
+		mode = os.O_WRONLY
+	}
+	f, err := openFileNoFollow(file, mode, 0)
 	if err != nil {
 		return err
 	}
