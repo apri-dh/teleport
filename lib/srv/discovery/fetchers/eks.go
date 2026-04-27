@@ -54,19 +54,14 @@ import (
 	kubeutils "github.com/gravitational/teleport/lib/kube/utils"
 	"github.com/gravitational/teleport/lib/services"
 	"github.com/gravitational/teleport/lib/srv/discovery/common"
-	"github.com/gravitational/teleport/lib/utils"
 )
 
 const (
 	concurrencyLimit = 5
 )
 
-const callerIdentityTTL = 15 * time.Minute
-
 type eksFetcher struct {
 	EKSFetcherConfig
-
-	callerIdentityCache *utils.FnCache
 }
 
 // regionalFetcher discovers EKS clusters in a single AWS region.
@@ -75,7 +70,7 @@ type regionalFetcher struct {
 	logger            *slog.Logger
 	eks               EKSClient
 	stsPresign        STSPresignClient
-	callerIdentity    string
+	fetcherRoleARN    string
 	setupAccessForARN string
 }
 
@@ -185,17 +180,7 @@ func NewEKSFetcher(cfg EKSFetcherConfig) (common.Fetcher, error) {
 	if err := cfg.CheckAndSetDefaults(); err != nil {
 		return nil, trace.Wrap(err)
 	}
-	callerIdentityCache, err := utils.NewFnCache(utils.FnCacheConfig{
-		TTL:         callerIdentityTTL,
-		ReloadOnErr: true,
-	})
-	if err != nil {
-		return nil, trace.Wrap(err)
-	}
-	return &eksFetcher{
-		EKSFetcherConfig:    cfg,
-		callerIdentityCache: callerIdentityCache,
-	}, nil
+	return &eksFetcher{EKSFetcherConfig: cfg}, nil
 }
 
 // assumeRole returns the matcher's AssumeRole as a value, zero when unset.
@@ -212,27 +197,19 @@ func (a *eksFetcher) credentialOpts() []awsconfig.OptionsFn {
 	return getAWSOpts(a.assumeRole(), a.Matcher.Integration)
 }
 
-// resolveCallerIdentity resolves and caches the fetcher's AWS caller identity.
-// The cache has a 15-min TTL so underlying identity changes don't need a restart.
-// Failures trigger a retry on the next call.
-func (a *eksFetcher) resolveCallerIdentity(ctx context.Context, cfg aws.Config) string {
-	identity, err := utils.FnCacheGet(ctx, a.callerIdentityCache, "",
-		func(ctx context.Context) (string, error) {
-			if a.Matcher.AssumeRole != nil && a.Matcher.AssumeRole.RoleARN != "" {
-				return a.Matcher.AssumeRole.RoleARN, nil
-			}
-			stsClient := a.ClientGetter.GetAWSSTSClient(cfg)
-			out, err := stsClient.GetCallerIdentity(ctx, &sts.GetCallerIdentityInput{})
-			if err != nil {
-				return "", trace.Wrap(err)
-			}
-			return convertAssumedRoleToIAMRole(aws.ToString(out.Arn)), nil
-		})
+// resolveFetcherRoleARN returns the IAM role ARN used as the principal for
+// EKS access entries. Returns empty on failure, which causes access setup
+// to be skipped.
+func (a *eksFetcher) resolveFetcherRoleARN(ctx context.Context, cfg aws.Config) string {
+	if a.Matcher.AssumeRole != nil && a.Matcher.AssumeRole.RoleARN != "" {
+		return a.Matcher.AssumeRole.RoleARN
+	}
+	out, err := a.ClientGetter.GetAWSSTSClient(cfg).GetCallerIdentity(ctx, &sts.GetCallerIdentityInput{})
 	if err != nil {
-		a.Logger.WarnContext(ctx, "Failed to resolve AWS caller identity", "error", err)
+		a.Logger.WarnContext(ctx, "Failed to resolve AWS caller identity, EKS access setup will be skipped", "error", err)
 		return ""
 	}
-	return identity
+	return convertAssumedRoleToIAMRole(aws.ToString(out.Arn))
 }
 
 // GetIntegration returns the integration name that is used for getting credentials of the fetcher.
@@ -286,10 +263,26 @@ func (a *eksFetcher) getEKSClusters(ctx context.Context) (types.KubeClusters, er
 		}
 		regions = enabled
 	}
+	if len(regions) == 0 {
+		return nil, nil
+	}
+
+	var fetcherRoleARN, setupAccessForARN string
+	if a.Matcher.Integration == "" {
+		stsCfg, err := a.ClientGetter.GetConfig(ctx, regions[0], a.credentialOpts()...)
+		if err != nil {
+			return nil, trace.Wrap(err)
+		}
+		fetcherRoleARN = a.resolveFetcherRoleARN(ctx, stsCfg)
+		setupAccessForARN = a.Matcher.SetupAccessForARN
+		if setupAccessForARN == "" {
+			setupAccessForARN = fetcherRoleARN
+		}
+	}
 
 	var clusters types.KubeClusters
 	for _, region := range regions {
-		rf, err := a.newRegionalFetcher(ctx, region)
+		rf, err := a.newRegionalFetcher(ctx, region, fetcherRoleARN, setupAccessForARN)
 		if err != nil {
 			a.Logger.WarnContext(ctx, "Failed to initialize regional EKS fetcher, skipping",
 				"region", region, "error", err)
@@ -306,32 +299,19 @@ func (a *eksFetcher) getEKSClusters(ctx context.Context) (types.KubeClusters, er
 	return clusters, nil
 }
 
-// newRegionalFetcher builds the region-scoped worker for one region.
-func (a *eksFetcher) newRegionalFetcher(ctx context.Context, region string) (*regionalFetcher, error) {
+func (a *eksFetcher) newRegionalFetcher(ctx context.Context, region, fetcherRoleARN, setupAccessForARN string) (*regionalFetcher, error) {
 	cfg, err := a.ClientGetter.GetConfig(ctx, region, a.credentialOpts()...)
 	if err != nil {
 		return nil, trace.Wrap(err)
 	}
-
-	rf := &regionalFetcher{
-		matcher:    a.Matcher,
-		logger:     a.Logger,
-		eks:        a.ClientGetter.GetAWSEKSClient(cfg),
-		stsPresign: a.ClientGetter.GetAWSSTSPresignClient(cfg),
-	}
-
-	// Integration matchers handle cluster access through a separate flow,
-	// so caller-identity resolution and setup-ARN wiring are skipped.
-	if a.Matcher.Integration != "" {
-		return rf, nil
-	}
-
-	rf.callerIdentity = a.resolveCallerIdentity(ctx, cfg)
-	rf.setupAccessForARN = a.Matcher.SetupAccessForARN
-	if rf.setupAccessForARN == "" {
-		rf.setupAccessForARN = rf.callerIdentity
-	}
-	return rf, nil
+	return &regionalFetcher{
+		matcher:           a.Matcher,
+		logger:            a.Logger,
+		eks:               a.ClientGetter.GetAWSEKSClient(cfg),
+		stsPresign:        a.ClientGetter.GetAWSSTSPresignClient(cfg),
+		fetcherRoleARN:    fetcherRoleARN,
+		setupAccessForARN: setupAccessForARN,
+	}, nil
 }
 
 // FindClusters lists EKS clusters in this region, filters them against the
@@ -503,7 +483,7 @@ var eksDiscoveryPermissions = []string{
 }
 
 // checkOrSetupAccessForARN checks if the ARN has access to the cluster and sets up the access if needed.
-// The check involves checking if the access entry exists and if the "teleport:kube-agent:eks" is part of the Kubernetes group.
+// The check involves checking if the access entry exists and if the "teleport:kube-service:eks" is part of the Kubernetes group.
 // If the access entry doesn't exist or is misconfigured, the fetcher will temporarily gain admin access and create the role and binding.
 // The fetcher will then upsert the access entry with the correct Kubernetes group.
 func (r *regionalFetcher) checkOrSetupAccessForARN(ctx context.Context, cluster *ekstypes.Cluster) error {
@@ -533,7 +513,7 @@ func (r *regionalFetcher) checkOrSetupAccessForARN(ctx context.Context, cluster 
 		fallthrough
 	case trace.IsNotFound(err):
 		// If the access entry does not exist or the teleportKubernetesGroup is not part of the Kubernetes group, temporarily gain admin access and create the role and binding.
-		// This temporary access is granted to the identity that the Discovery service fetcher is running as (callerIdentity). If a role is assumed, the callerIdentity is the assumed role.
+		// The temporary access is granted to fetcherRoleARN, the IAM role the fetcher is running with.
 		if err := r.temporarilyGainAdminAccessAndCreateRole(ctx, cluster); trace.IsAccessDenied(err) {
 			// Access denied means that the principal does not have access to setup access entries for the cluster.
 			r.logger.WarnContext(ctx, "Access denied to setup access for EKS cluster, ensure the required permissions are set",
@@ -564,7 +544,7 @@ func (r *regionalFetcher) checkOrSetupAccessForARN(ctx context.Context, cluster 
 }
 
 // temporarilyGainAdminAccessAndCreateRole temporarily gains admin access to the EKS cluster by associating the EKS Cluster Admin Policy
-// to the callerIdentity. The fetcher will then create the role and binding for the teleportKubernetesGroup in the EKS cluster.
+// to the fetcherRoleARN. The fetcher will then create the role and binding for the teleportKubernetesGroup in the EKS cluster.
 func (r *regionalFetcher) temporarilyGainAdminAccessAndCreateRole(ctx context.Context, cluster *ekstypes.Cluster) error {
 	const (
 		// https://docs.aws.amazon.com/eks/latest/userguide/access-policies.html
@@ -577,7 +557,7 @@ func (r *regionalFetcher) temporarilyGainAdminAccessAndCreateRole(ctx context.Co
 		r.eks.CreateAccessEntry(ctx,
 			&eks.CreateAccessEntryInput{
 				ClusterName:  cluster.Name,
-				PrincipalArn: aws.String(r.callerIdentity),
+				PrincipalArn: aws.String(r.fetcherRoleARN),
 			},
 		),
 	)
@@ -593,7 +573,7 @@ func (r *regionalFetcher) temporarilyGainAdminAccessAndCreateRole(ctx context.Co
 					ctx,
 					&eks.DeleteAccessEntryInput{
 						ClusterName:  cluster.Name,
-						PrincipalArn: aws.String(r.callerIdentity),
+						PrincipalArn: aws.String(r.fetcherRoleARN),
 					}),
 			)
 			if err != nil {
@@ -613,7 +593,7 @@ func (r *regionalFetcher) temporarilyGainAdminAccessAndCreateRole(ctx context.Co
 			},
 			ClusterName:  cluster.Name,
 			PolicyArn:    aws.String(eksClusterAdminPolicy),
-			PrincipalArn: aws.String(r.callerIdentity),
+			PrincipalArn: aws.String(r.fetcherRoleARN),
 		}),
 	)
 	if err != nil && !trace.IsAlreadyExists(err) {

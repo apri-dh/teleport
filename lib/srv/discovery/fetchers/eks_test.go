@@ -23,8 +23,6 @@ import (
 	"errors"
 	"net/http"
 	"testing"
-	"testing/synctest"
-	"time"
 
 	"github.com/aws/aws-sdk-go-v2/aws"
 	v4 "github.com/aws/aws-sdk-go-v2/aws/signer/v4"
@@ -310,56 +308,6 @@ func TestEKSFetcherCallerIdentityRetriesAfterFailure(t *testing.T) {
 	require.NotNil(t, awsStatus)
 	require.Equal(t, resolvedARN, awsStatus.SetupAccessForArn)
 	require.Equal(t, 2, stsClient.calls, "expected STS to be re-attempted after the first failure")
-}
-
-func TestEKSFetcherCallerIdentityCacheTTL(t *testing.T) {
-	synctest.Test(t, func(t *testing.T) {
-		const resolvedARN = "arn:aws:iam::123456789012:role/discovery"
-		cluster := &ekstypes.Cluster{
-			Name:   aws.String("test-cluster"),
-			Arn:    aws.String("arn:aws:eks:eu-west-1:123456789012:cluster/test-cluster"),
-			Status: ekstypes.ClusterStatusActive,
-			Tags:   map[string]string{"env": "prod"},
-			AccessConfig: &ekstypes.AccessConfigResponse{
-				AuthenticationMode: ekstypes.AuthenticationModeConfigMap,
-			},
-		}
-
-		stsClient := &mockSTSClient{arn: resolvedARN}
-
-		cfg := EKSFetcherConfig{
-			ClientGetter: &mockRegionalEKSClientGetterWithSTS{
-				mockRegionalEKSClientGetter: mockRegionalEKSClientGetter{
-					AWSConfigProvider: mocks.AWSConfigProvider{},
-					clientsByRegion: map[string]EKSClient{
-						"eu-west-1": &mockEKSAPI{clusters: []*ekstypes.Cluster{cluster}},
-					},
-				},
-				stsClient: stsClient,
-			},
-			Matcher: types.AWSMatcher{
-				Regions: []string{"eu-west-1"},
-				Tags:    types.Labels{types.Wildcard: []string{types.Wildcard}},
-			},
-			Logger: logtest.NewLogger(),
-		}
-		fetcher, err := NewEKSFetcher(cfg)
-		require.NoError(t, err)
-
-		_, err = fetcher.Get(t.Context())
-		require.NoError(t, err)
-		require.Equal(t, 1, stsClient.calls)
-
-		time.Sleep(callerIdentityTTL - time.Second)
-		_, err = fetcher.Get(t.Context())
-		require.NoError(t, err)
-		require.Equal(t, 1, stsClient.calls, "expected STS to stay cached within TTL")
-
-		time.Sleep(2 * time.Second)
-		_, err = fetcher.Get(t.Context())
-		require.NoError(t, err)
-		require.Equal(t, 2, stsClient.calls, "expected STS to be re-resolved after TTL")
-	})
 }
 
 // mockSTSClient records how many times GetCallerIdentity is called and
