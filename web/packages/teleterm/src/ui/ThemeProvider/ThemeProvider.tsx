@@ -16,7 +16,12 @@
  * along with this program.  If not, see <http://www.gnu.org/licenses/>.
  */
 
-import { LEGACY_THEME_COLORS } from '@gravitational/design-system';
+import {
+  createThemeSystem,
+  LEGACY_THEME_COLORS,
+  TELEPORT_THEME,
+  ThemeProvider as NewThemeProvider,
+} from '@gravitational/design-system';
 import React, { useEffect, useMemo, useState } from 'react';
 import {
   ThemeProvider as StyledThemeProvider,
@@ -31,6 +36,8 @@ import { useAppContext } from 'teleterm/ui/appContextProvider';
 
 import { GlobalStyle } from './globals';
 import { darkTheme, lightTheme } from './theme';
+
+const themeSystem = createThemeSystem(TELEPORT_THEME.config);
 
 export const ThemeProvider = (props: React.PropsWithChildren<unknown>) => {
   // Listening to Electron's nativeTheme.on('updated') is a workaround.
@@ -81,13 +88,18 @@ export const StaticThemeProvider = (
   props: React.PropsWithChildren<{ theme?: Theme }>
 ) => {
   return (
-    <StyledThemeProvider theme={props.theme}>
-      <StyleSheetManager shouldForwardProp={shouldForwardProp}>
-        <React.Fragment>
-          <GlobalStyle />
-          {props.children}
-        </React.Fragment>
-      </StyleSheetManager>
-    </StyledThemeProvider>
+    <NewThemeProvider
+      system={themeSystem}
+      forcedTheme={props.theme?.type === 'light' ? 'light' : 'dark'}
+    >
+      <StyledThemeProvider theme={props.theme}>
+        <StyleSheetManager shouldForwardProp={shouldForwardProp}>
+          <React.Fragment>
+            <GlobalStyle />
+            {props.children}
+          </React.Fragment>
+        </StyleSheetManager>
+      </StyledThemeProvider>
+    </NewThemeProvider>
   );
 };
