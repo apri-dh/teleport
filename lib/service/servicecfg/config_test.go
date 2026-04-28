@@ -136,7 +136,7 @@ func TestCheckApp(t *testing.T) {
 				Name: "-foo",
 				URI:  "http://localhost",
 			},
-			err: "must be a lower case valid DNS subdomain",
+			err: "must be a valid DNS label",
 		},
 		{
 			desc: `subdomain cannot contain the exclamation mark character "!"`,
@@ -144,7 +144,7 @@ func TestCheckApp(t *testing.T) {
 				Name: "foo!bar",
 				URI:  "http://localhost",
 			},
-			err: "must be a lower case valid DNS subdomain",
+			err: "must be a valid DNS label",
 		},
 		{
 			desc: "subdomain of length 63 characters is valid (maximum length)",
@@ -159,7 +159,39 @@ func TestCheckApp(t *testing.T) {
 				Name: "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
 				URI:  "http://localhost",
 			},
-			err: "must be a lower case valid DNS subdomain",
+			err: "must be a valid DNS label",
+		},
+		{
+			desc: "leading digit is accepted (RFC 1123)",
+			inApp: App{
+				Name: "1stapp",
+				URI:  "http://localhost",
+			},
+		},
+		{
+			desc: "uppercase is auto-lowercased",
+			inApp: App{
+				Name: "MyApp",
+				URI:  "http://localhost",
+			},
+		},
+		{
+			desc: "public_addr with scheme is rejected",
+			inApp: App{
+				Name:       "foo",
+				URI:        "http://localhost",
+				PublicAddr: "https://foo.example.com",
+			},
+			err: "must not contain a URI scheme",
+		},
+		{
+			desc: "public_addr with bracketed IPv6 is rejected",
+			inApp: App{
+				Name:       "foo",
+				URI:        "http://localhost",
+				PublicAddr: "[::1]",
+			},
+			err: "must not be an IP address",
 		},
 	}
 	for _, h := range common.ReservedHeaders {
@@ -190,6 +222,23 @@ func TestCheckApp(t *testing.T) {
 			}
 		})
 	}
+}
+
+func TestCheckAppAutoLowercase(t *testing.T) {
+	app := App{Name: "MyApp", URI: "http://localhost"}
+	require.NoError(t, app.CheckAndSetDefaults())
+	require.Equal(t, "myapp", app.Name)
+}
+
+func TestCheckAppAutoLowercaseRequiredApps(t *testing.T) {
+	app := App{
+		Name:             "MyApp",
+		URI:              "http://localhost",
+		RequiredAppNames: []string{"AnotherApp", "already-lower"},
+	}
+	require.NoError(t, app.CheckAndSetDefaults())
+	require.Equal(t, "myapp", app.Name)
+	require.Equal(t, []string{"anotherapp", "already-lower"}, app.RequiredAppNames)
 }
 
 func TestCheckAppTCPPorts(t *testing.T) {

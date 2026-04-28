@@ -1638,6 +1638,21 @@ func (g *GRPCServer) UpsertApplicationServer(ctx context.Context, req *authpb.Up
 		}
 	}
 
+	// Normalise the app name and public address on the heartbeat path
+	// for rolling-upgrade compatibility. Older agents may still heartbeat
+	// mixed-case names or public addresses that contain a URL scheme,
+	// path, or port; rejecting those would break upgrades where auth
+	// ships ahead of agents. Admin-facing CreateApp and UpdateApp paths
+	// reject these values instead of rewriting them so admins see a
+	// clear error rather than a silent retarget. The same helper runs
+	// on the inventory control stream so all heartbeat paths apply the
+	// same normalization; otherwise the storage key and routing identity
+	// could diverge: a heartbeat for "Foo" would store at
+	// /appServers/<host>/Foo while advertising app name "foo", so a
+	// separate "foo" record on a different agent would create ambiguous
+	// routing on requests for "foo".
+	services.NormalizeAppServerForHeartbeat(server)
+
 	if err := services.ValidateApp(app, auth); err != nil {
 		return nil, trace.Wrap(err)
 	}

@@ -19,6 +19,8 @@ package services
 import (
 	"context"
 	"fmt"
+	"net/url"
+	"strings"
 
 	"github.com/gravitational/trace"
 
@@ -243,20 +245,45 @@ func IdentityCenterAccountToAppServer(acct *identitycenterv1.Account) *types.App
 		}
 	}
 
+	// StartUrl is typically a full URL (e.g. "https://start.example.com/start"),
+	// so url.Hostname() strips the scheme, path, and port (a value like
+	// https://host:8443/path becomes "host"). PublicAddr must be a bare
+	// hostname for downstream consumers like cert SAN derivation.
+	publicAddr := acct.Spec.StartUrl
+	if u, err := url.Parse(publicAddr); err == nil && u.Hostname() != "" {
+		publicAddr = u.Hostname()
+	}
+	// Lowercase publicAddr because DNS hostnames are case-insensitive by
+	// spec and downstream proxy-collision matching is case-sensitive.
+	publicAddr = strings.ToLower(publicAddr)
+
+	// Lowercase the metadata name so it matches the DNS-1123 subdomain rule
+	// services.ValidateApp enforces on every write path. AWS Identity Center
+	// accounts can have mixed-case names; without this they would be
+	// rejected. Lowercase both the outer AppServer metadata (the backend
+	// storage key in PresenceService.UpsertApplicationServer) and the inner
+	// App metadata (the routing identity used by app matching) so the
+	// storage key and routing identity stay aligned.
+	metadata := types.Metadata153ToLegacy(acct.Metadata)
+	metadata.Name = strings.ToLower(metadata.Name)
+
+	// types.Metadata is a struct value, so each assignment below makes an
+	// independent copy. Mutating appServer.Metadata.Description after
+	// construction does not bleed into the inner App's Metadata.
 	appServer := &types.AppServerV3{
 		Kind:     types.KindAppServer,
 		SubKind:  types.KindIdentityCenterAccount,
 		Version:  types.V3,
-		Metadata: types.Metadata153ToLegacy(acct.Metadata),
+		Metadata: metadata,
 		Spec: types.AppServerSpecV3{
 			App: &types.AppV3{
 				Kind:     types.KindApp,
 				SubKind:  types.KindIdentityCenterAccount,
 				Version:  types.V3,
-				Metadata: types.Metadata153ToLegacy(acct.Metadata),
+				Metadata: metadata,
 				Spec: types.AppSpecV3{
 					URI:        acct.Spec.StartUrl,
-					PublicAddr: acct.Spec.StartUrl,
+					PublicAddr: publicAddr,
 					AWS: &types.AppAWS{
 						ExternalID: acct.Spec.Id,
 					},

@@ -19,7 +19,9 @@
 package servicecfg
 
 import (
+	"context"
 	"fmt"
+	"log/slog"
 	"net"
 	"net/http"
 	"net/url"
@@ -183,24 +185,52 @@ func (a *App) CheckAndSetDefaults() error {
 			return trace.BadParameter("missing application %q URI", a.Name)
 		}
 	}
-	// Check if the application name is a valid subdomain. Don't allow names that
-	// are invalid subdomains because for trusted clusters the name is used to
-	// construct the domain that the application will be available at.
-	if errs := validation.IsDNS1035Label(a.Name); len(errs) > 0 {
-		return trace.BadParameter("application name %q must be a lower case valid DNS subdomain: https://goteleport.com/docs/enroll-resources/application-access/guides/connecting-apps/#application-name", a.Name)
+	// Auto-lowercase the app name. Static config used to crash on
+	// uppercase names; lowercasing here keeps them working while warning
+	// operators to update their YAML so the next major release can drop
+	// the silent rewrite. CheckAndSetDefaults has no context parameter,
+	// so context.TODO is used as a placeholder.
+	if name := strings.ToLower(a.Name); name != a.Name {
+		slog.WarnContext(context.TODO(), "Application name contains uppercase letters, using lowercase instead. Update your configuration to use the lowercase name.", "original", a.Name, "lowercase", name)
+		a.Name = name
+	}
+	// Also lowercase RequiredAppNames entries so they match their
+	// referents after those apps are also lowercased.
+	for i, n := range a.RequiredAppNames {
+		a.RequiredAppNames[i] = strings.ToLower(n)
+	}
+	// Static config keeps the stricter DNS-1123 *label* rule (lowercase
+	// alphanumeric and hyphens, max 63 chars, no dots) to preserve
+	// historical behavior; loosening here would silently start accepting
+	// shapes that older Teleport versions reject. The dynamic write path
+	// in services.ValidateApp accepts DNS-1123 *subdomain* names because
+	// integrations like AWS OIDC produce dotted names that have always
+	// been allowed there.
+	if errs := validation.IsDNS1123Label(a.Name); len(errs) > 0 {
+		return trace.BadParameter("application name %q must be a valid DNS label (lowercase alphanumeric or '-', must start and end with alphanumeric, max 63 chars): https://goteleport.com/docs/enroll-resources/application-access/guides/connecting-apps/#application-name", a.Name)
 	}
 	// Parse and validate URL.
 	if _, err := url.Parse(a.URI); err != nil {
 		return trace.BadParameter("application %q URI invalid: %v", a.Name, err)
 	}
-	// If a port was specified or an IP address was provided for the public
-	// address, return an error.
+	// Validate public_addr is a bare DNS hostname - no scheme, port, IP,
+	// path, query, fragment, or userinfo.
 	if a.PublicAddr != "" {
-		if _, _, err := net.SplitHostPort(a.PublicAddr); err == nil {
-			return trace.BadParameter("application %q public_addr %q can not contain a port, applications will be available on the same port as the web proxy", a.Name, a.PublicAddr)
+		if strings.Contains(a.PublicAddr, "://") {
+			return trace.BadParameter("application %q public_addr %q must not contain a URI scheme; use a bare hostname", a.Name, a.PublicAddr)
 		}
-		if net.ParseIP(a.PublicAddr) != nil {
-			return trace.BadParameter("application %q public_addr %q can not be an IP address, Teleport Application Access uses DNS names for routing", a.Name, a.PublicAddr)
+		if strings.ContainsAny(a.PublicAddr, "/?#@") {
+			return trace.BadParameter("application %q public_addr %q must be a bare hostname; remove any path, query, fragment, or userinfo", a.Name, a.PublicAddr)
+		}
+		if _, _, err := net.SplitHostPort(a.PublicAddr); err == nil {
+			return trace.BadParameter("application %q public_addr %q must not contain a port, applications will be available on the same port as the web proxy", a.Name, a.PublicAddr)
+		}
+		stripped := a.PublicAddr
+		if strings.HasPrefix(stripped, "[") && strings.HasSuffix(stripped, "]") {
+			stripped = stripped[1 : len(stripped)-1]
+		}
+		if net.ParseIP(stripped) != nil {
+			return trace.BadParameter("application %q public_addr %q must not be an IP address, Teleport Application Access uses DNS names for routing", a.Name, a.PublicAddr)
 		}
 	}
 	// Mark the app as coming from the static configuration.

@@ -1067,6 +1067,12 @@ func (c *Controller) handleAppServerHB(handle *upstreamHandle, appServer *types.
 		return trace.AccessDenied("incorrect app server scope (expected %q, got %q)", handle.Hello().GetScope(), appServer.Scope)
 	}
 
+	// Normalise mixed-case names and URL-shaped public addresses from
+	// older agents before deriving the resource key, so the cached
+	// AppServer used by keepalive matches what was written to the
+	// backend by UpsertApplicationServer.
+	services.NormalizeAppServerForHeartbeat(appServer)
+
 	if handle.appServers == nil {
 		handle.appServers = make(map[resourceKey]*heartBeatInfo[*types.AppServerV3])
 	}

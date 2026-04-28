@@ -2175,6 +2175,18 @@ func applyAppsConfig(fc *FileConfig, cfg *servicecfg.Config) error {
 		cfg.Apps.Apps = append(cfg.Apps.Apps, app)
 	}
 
+	// Reject duplicate app names. Names are case-insensitive after
+	// CheckAndSetDefaults lowercases them, so two YAML entries `Foo`
+	// and `foo` collide and the second would silently overwrite the
+	// first when the app server registers them.
+	seenNames := make(map[string]bool, len(cfg.Apps.Apps))
+	for _, app := range cfg.Apps.Apps {
+		if seenNames[app.Name] {
+			return trace.BadParameter("duplicate application name %q in static config: app names are case-insensitive after lowercase normalization", app.Name)
+		}
+		seenNames[app.Name] = true
+	}
+
 	return nil
 }
 

@@ -5758,6 +5758,133 @@ func TestUpsertApplicationServerOrigin(t *testing.T) {
 	require.NoError(t, err)
 }
 
+// TestApplicationServerNameLowercase verifies the lowercase split: the
+// heartbeat path rewrites mixed-case names in place to keep older agents
+// working through a rolling upgrade, while the admin-facing CreateApp and
+// UpdateApp paths reject them so admins see a clear error rather than a
+// silent rename of an existing backend record.
+func TestApplicationServerNameLowercase(t *testing.T) {
+	t.Parallel()
+
+	t.Run("heartbeat accepts and lowercases", func(t *testing.T) {
+		t.Parallel()
+
+		ctx := context.Background()
+		server := newTestTLSServer(t)
+		admin := authtest.TestAdmin()
+		client, err := server.NewClient(admin)
+		require.NoError(t, err)
+
+		app, err := types.NewAppV3(types.Metadata{Name: "MixedCaseApp"}, types.AppSpecV3{
+			URI: "http://localhost:8080",
+		})
+		require.NoError(t, err)
+		appServer, err := types.NewAppServerV3FromApp(app, "localhost", "host-id")
+		require.NoError(t, err)
+
+		_, err = client.UpsertApplicationServer(ctx, appServer)
+		require.NoError(t, err)
+
+		stored, err := client.GetApplicationServers(ctx, apidefaults.Namespace)
+		require.NoError(t, err)
+		require.Len(t, stored, 1)
+		require.Equal(t, "mixedcaseapp", stored[0].GetApp().GetName())
+		// The AppServer metadata name (the backend storage key) must
+		// match the inner app name. Otherwise the storage key would
+		// retain the mixed-case form while the routing identity used
+		// by app matching is lowercased, causing ambiguous routing
+		// for legacy case-distinct records on different agents.
+		require.Equal(t, "mixedcaseapp", stored[0].GetName())
+	})
+
+	t.Run("CreateApp rejects mixed-case", func(t *testing.T) {
+		t.Parallel()
+
+		ctx := context.Background()
+		server := newTestTLSServer(t)
+		admin := authtest.TestAdmin()
+		client, err := server.NewClient(admin)
+		require.NoError(t, err)
+
+		mixed, err := types.NewAppV3(types.Metadata{Name: "MyApp"}, types.AppSpecV3{
+			URI: "http://localhost:8080",
+		})
+		require.NoError(t, err)
+		err = client.CreateApp(ctx, mixed)
+		require.Error(t, err)
+		require.ErrorContains(t, err, "must be a valid DNS name")
+	})
+
+	t.Run("UpdateApp rejects mixed-case", func(t *testing.T) {
+		t.Parallel()
+
+		ctx := context.Background()
+		server := newTestTLSServer(t)
+		admin := authtest.TestAdmin()
+		client, err := server.NewClient(admin)
+		require.NoError(t, err)
+
+		mixed, err := types.NewAppV3(types.Metadata{Name: "MyApp"}, types.AppSpecV3{
+			URI: "http://localhost:8080",
+		})
+		require.NoError(t, err)
+		// Without this guard, validation would lowercase the name
+		// in-place and target a different backend record than the one
+		// the admin intended to update.
+		err = client.UpdateApp(ctx, mixed)
+		require.Error(t, err)
+		require.ErrorContains(t, err, "must be a valid DNS name")
+	})
+}
+
+// TestApplicationServerHeartbeatPublicAddrNormalization verifies that
+// the heartbeat path strips a URL scheme, path, and trailing port from
+// public_addr values heartbeated by older agents. Without this
+// normalization, rolling upgrades would reject those heartbeats and
+// the apps would disappear until every agent was upgraded in lockstep.
+func TestApplicationServerHeartbeatPublicAddrNormalization(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name  string
+		input string
+		want  string
+	}{
+		{name: "scheme and path stripped", input: "https://app.example.com/start", want: "app.example.com"},
+		{name: "trailing port stripped", input: "app.example.com:443", want: "app.example.com"},
+		{name: "scheme and port stripped", input: "https://app.example.com:443", want: "app.example.com"},
+		{name: "bare hostname unchanged", input: "app.example.com", want: "app.example.com"},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+
+			ctx := context.Background()
+			server := newTestTLSServer(t)
+			admin := authtest.TestAdmin()
+			client, err := server.NewClient(admin)
+			require.NoError(t, err)
+
+			app, err := types.NewAppV3(types.Metadata{Name: "myapp"}, types.AppSpecV3{
+				URI:        "http://localhost:8080",
+				PublicAddr: tt.input,
+			})
+			require.NoError(t, err)
+			appServer, err := types.NewAppServerV3FromApp(app, "localhost", "host-id")
+			require.NoError(t, err)
+
+			_, err = client.UpsertApplicationServer(ctx, appServer)
+			require.NoError(t, err)
+
+			stored, err := client.GetApplicationServers(ctx, apidefaults.Namespace)
+			require.NoError(t, err)
+			require.Len(t, stored, 1)
+			require.Equal(t, tt.want, stored[0].GetApp().GetPublicAddr())
+		})
+	}
+}
+
 func TestGetAccessGraphConfig(t *testing.T) {
 	t.Parallel()
 

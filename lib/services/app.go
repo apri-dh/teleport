@@ -93,16 +93,63 @@ type ApplicationsInternal interface {
 	) ([]backend.ConditionalAction, error)
 }
 
-// ValidateApp validates the Application resource.
+// ValidateApp validates the Application resource. It does not modify the
+// app's name: changing the name in-place would silently rewrite the backend
+// resource key during UpdateApp, which would target the wrong record on
+// clusters that already contain mixed-case app names from earlier versions.
+// Heartbeat callers that need to accept mixed-case names from older agents
+// must lowercase the name themselves before calling ValidateApp.
+//
+// On success, ValidateApp lowercases the app's RequiredAppNames in place.
+// RequiredAppNames is a spec field, not the resource key, so rewriting it
+// does not affect which backend record is targeted; it ensures references
+// match the lowercased names of the apps they reference. The lowercase
+// runs only on the validated path so a rejected app does not leave with
+// partially mutated state.
 func ValidateApp(app types.Application, proxyGetter ProxyGetter) error {
-	// If no public address is set, there's nothing to validate.
+	// Validate that the app name is a valid DNS subdomain (RFC 1123). App
+	// names become subdomains (appName.proxyHost), so each label must be
+	// lowercase alphanumeric or hyphens. Dots are allowed because some
+	// integrations (e.g. AWS OIDC) use dotted names like "env.prod".
+	if errs := validation.IsDNS1123Subdomain(app.GetName()); len(errs) > 0 {
+		return trace.BadParameter("application name %q must be a valid DNS name (lowercase alphanumeric, '-', or '.', must start and end with alphanumeric, max 253 chars): https://goteleport.com/docs/enroll-resources/application-access/guides/connecting-apps/#application-name", app.GetName())
+	}
+
+	// If no public address is set, there's nothing else to validate.
 	if app.GetPublicAddr() == "" {
+		lowercaseRequiredAppNames(app)
 		return nil
 	}
 
-	// The app's spec has already been validated in CheckAndSetDefaults, so we can assume the public address is a valid
-	// address. The remainder of this function focuses on detecting conflicts with proxy public addresses because the
-	// proxy addresses are not part of the app spec and need to be fetched separately.
+	addr := app.GetPublicAddr()
+	// Reject public_addr values that contain a URI scheme.
+	if strings.Contains(addr, "://") {
+		return trace.BadParameter("application %q public_addr %q must not contain a URI scheme; use a bare hostname", app.GetName(), addr)
+	}
+	// Reject public_addr values that carry a path, query, fragment, or
+	// userinfo. utils.ParseAddr accepts these but they are not valid in
+	// a bare hostname and would produce an invalid routing or cert
+	// hostname downstream.
+	if strings.ContainsAny(addr, "/?#@") {
+		return trace.BadParameter("application %q public_addr %q must be a bare hostname; remove any path, query, fragment, or userinfo", app.GetName(), addr)
+	}
+	// Reject public_addr values that contain a port.
+	if _, _, err := net.SplitHostPort(addr); err == nil {
+		return trace.BadParameter("application %q public_addr %q must not contain a port, applications will be available on the same port as the web proxy", app.GetName(), addr)
+	}
+	// Reject public_addr values that are IP addresses, including bracketed
+	// IPv6 like [::1]. Strip a paired set of brackets only.
+	stripped := addr
+	if strings.HasPrefix(stripped, "[") && strings.HasSuffix(stripped, "]") {
+		stripped = stripped[1 : len(stripped)-1]
+	}
+	if net.ParseIP(stripped) != nil {
+		return trace.BadParameter("application %q public_addr %q must not be an IP address, Teleport Application Access uses DNS names for routing", app.GetName(), addr)
+	}
+	// The shape checks above run on every write path because the heartbeat
+	// handler in lib/auth/grpcserver.go reaches ValidateApp without going
+	// through CheckAndSetDefaults. The block below detects conflicts with
+	// proxy public addresses, which require fetching proxy state separately.
 	appAddr, err := utils.ParseAddr(app.GetPublicAddr())
 	if err != nil {
 		return trace.Wrap(err)
@@ -153,7 +200,83 @@ func ValidateApp(app types.Application, proxyGetter ProxyGetter) error {
 		}
 	}
 
+	lowercaseRequiredAppNames(app)
 	return nil
+}
+
+// lowercaseRequiredAppNames lowercases the app's RequiredAppNames in place.
+// Required-app references look up other apps by their lowercased names, so
+// the references must be lowercased too. Use a local copy of the slice to
+// make the mutation explicit at the call site.
+func lowercaseRequiredAppNames(app types.Application) {
+	required := app.GetRequiredAppNames()
+	for i, n := range required {
+		required[i] = strings.ToLower(n)
+	}
+}
+
+// NormalizeAppServerForHeartbeat rewrites the inner app name and public
+// address heartbeated by an older agent into the bare-hostname,
+// lowercase form ValidateApp now requires. It is shared by the gRPC
+// handler and the inventory control stream so both heartbeat paths
+// apply the same normalization; without this the storage key and
+// routing identity could diverge across paths. Admin-facing paths must
+// not call this helper: they reject mixed-case names instead of
+// rewriting them, to avoid silently retargeting an existing record.
+//
+// The lowercase is applied to both the inner app name and the outer
+// AppServer metadata name. The outer name is rewritten whenever it
+// case-folds to the inner name so an older agent that only lowercased
+// one of the two still ends up with both lowercased after this helper
+// runs. A true mismatch between outer and inner names is left
+// unchanged so it surfaces in ValidateApp instead of being silently
+// rewritten in only one place.
+func NormalizeAppServerForHeartbeat(server types.AppServer) {
+	app := server.GetApp()
+	if app == nil {
+		return
+	}
+	innerName := strings.ToLower(app.GetName())
+	if innerName != app.GetName() {
+		app.SetName(innerName)
+	}
+	if outerName := server.GetName(); strings.EqualFold(outerName, innerName) && outerName != innerName {
+		server.SetName(innerName)
+	}
+	if normalised := normalizeHeartbeatPublicAddr(app.GetPublicAddr()); normalised != app.GetPublicAddr() {
+		app.SetPublicAddr(normalised)
+	}
+}
+
+// normalizeHeartbeatPublicAddr rewrites a public address heartbeated by
+// an older agent into the bare-hostname form ValidateApp now requires.
+// It strips a leading URL scheme and path, strips a trailing port, and
+// returns the result. Inputs that are already bare hostnames pass
+// through unchanged. Inputs that cannot be normalised (for example IP
+// addresses, opaque URLs like mailto:, or empty values) are returned
+// as-is so that ValidateApp produces the same error it would on the
+// admin-facing CreateApp and UpdateApp paths.
+func normalizeHeartbeatPublicAddr(addr string) string {
+	if addr == "" {
+		return addr
+	}
+	// Strip a URL scheme and path if present, e.g.
+	// "https://app.example.com/path" -> "app.example.com".
+	// url.Hostname() also strips a port, so https://host:8443/path
+	// becomes "host" in this branch.
+	if strings.Contains(addr, "://") {
+		if u, err := url.Parse(addr); err == nil && u.Hostname() != "" {
+			return u.Hostname()
+		}
+		return addr
+	}
+	// Strip a trailing port if present, e.g. "app.example.com:443"
+	// -> "app.example.com". Older agent versions emitted the proxy's
+	// port in app public_addr values.
+	if host, _, err := net.SplitHostPort(addr); err == nil {
+		return host
+	}
+	return addr
 }
 
 // MarshalApp marshals Application resource to JSON.
@@ -360,15 +483,19 @@ func getAppName(serviceName, namespace, clusterName, portName, nameAnnotation st
 			name = fmt.Sprintf("%s-%s", name, portName)
 		}
 
-		if len(validation.IsDNS1035Label(name)) > 0 {
+		if len(validation.IsDNS1123Label(name)) > 0 {
 			return "", trace.BadParameter(
-				"application name %q must be a lower case valid DNS subdomain: https://goteleport.com/docs/enroll-resources/application-access/guides/connecting-apps/#application-name", name)
+				"application name %q must be a valid DNS label (lowercase alphanumeric or '-', must start and end with alphanumeric, max 63 chars): https://goteleport.com/docs/enroll-resources/application-access/guides/connecting-apps/#application-name", name)
 		}
 
 		return name, nil
 	}
 
-	clusterName = strings.ReplaceAll(clusterName, ".", "-")
+	// clusterName comes from the operator-set discovery_group, which is a
+	// free-form string. Lowercase it (and replace dots) so the composed app
+	// name passes the DNS-1123 subdomain rule that services.ValidateApp now
+	// enforces on every write path.
+	clusterName = strings.ToLower(strings.ReplaceAll(clusterName, ".", "-"))
 	if portName != "" {
 		return fmt.Sprintf("%s-%s-%s-%s", serviceName, portName, namespace, clusterName), nil
 	}

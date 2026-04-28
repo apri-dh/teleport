@@ -23,6 +23,7 @@ import (
 	"crypto/tls"
 	"encoding/json"
 	"fmt"
+	"strings"
 	"testing"
 	"time"
 
@@ -139,6 +140,11 @@ func TestHandlers(t *testing.T) {
 			kind: types.KindAppServer,
 			makeResource: func(t *testing.T, name string) types.Resource {
 				t.Helper()
+				// App names must be valid DNS-1123 subdomains, which
+				// disallow underscores. The shared loop below generates
+				// names containing underscores, so rewrite them to
+				// hyphens to keep the fixture valid.
+				name = strings.ReplaceAll(name, "_", "-")
 				app, err := types.NewAppV3(
 					types.Metadata{
 						Name: name,

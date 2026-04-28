@@ -875,7 +875,7 @@ func (c *UnifiedResourceCache) processEventsAndUpdateCurrent(ctx context.Context
 				c.deleteLocked(&types.ResourceHeader{
 					Kind: types.KindAppServer,
 					Metadata: types.Metadata{
-						Name: event.Resource.GetName(),
+						Name: strings.ToLower(event.Resource.GetName()),
 					},
 				})
 			default:
