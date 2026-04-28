@@ -575,11 +575,9 @@ func BenchmarkMatchSearch(b *testing.B) {
 		b.Run(bm.name, func(b *testing.B) {
 			b.ReportAllocs()
 
-			var got bool
 			for b.Loop() {
-				got = u.MatchSearch(bm.searchKeywords)
+				require.Equal(b, bm.want, u.MatchSearch(bm.searchKeywords))
 			}
-			require.Equal(b, bm.want, got)
 		})
 	}
 }
