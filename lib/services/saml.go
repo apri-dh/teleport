@@ -40,6 +40,7 @@ import (
 	"github.com/gravitational/teleport"
 	"github.com/gravitational/teleport/api/defaults"
 	"github.com/gravitational/teleport/api/types"
+	"github.com/gravitational/teleport/api/utils/clientutils"
 	"github.com/gravitational/teleport/lib/tlsca"
 	"github.com/gravitational/teleport/lib/utils"
 )
@@ -60,7 +61,7 @@ const (
 
 // ValidateSAMLConnector validates the SAMLConnector and sets default values.
 // If a remote to fetch roles is specified, roles will be validated to exist.
-func ValidateSAMLConnector(sc types.SAMLConnector, rg RoleGetter, opts ...types.SAMLConnectorValidationOption) error {
+func ValidateSAMLConnector(sc types.SAMLConnector, rg RoleGetter, pg PluginGetter, opts ...types.SAMLConnectorValidationOption) error {
 	var options types.SAMLConnectorValidationOptions
 	for _, opt := range opts {
 		opt(&options)
@@ -239,9 +240,58 @@ func ValidateSAMLConnector(sc types.SAMLConnector, rg RoleGetter, opts ...types.
 		sc.SetMFASettings(mfa)
 	}
 
-	// TODO(nixpig): Add validation for when EntraIDGroupsProvider is present and not disbled then
-	// a valid authentication mechanism must be available. Proposed solution is to inject the
-	// token provider and ensure a valid azcore.TokenCredential can be resolved.
+	// When EntraIDGroupsProvider is present and not disabled, validate that there's a means
+	// to authenticate against Graph API to fetch groups overage.
+	// NOTE: This doesn't actually authenticate against Graph API, just that the means to build
+	// a credential are present.
+	provider := sc.GetEntraIDGroupsProvider()
+	if options.WithEntraIDGroupsProvider && provider != nil && !provider.Disabled {
+		// plugin
+
+		// TODO(nixpig): Consider approaches for determining plugin that's not O(n) lookup. As it stands, we expect this to be operating
+		// on cache and for customers to have relatively few plugins configured.
+		var match *types.PluginV1
+		for plugin, err := range clientutils.Resources(context.Background(), func(ctx context.Context, limit int, startKey string) ([]types.Plugin, string, error) {
+			return pg.ListPlugins(ctx, limit, startKey, false)
+		}) {
+			if err != nil {
+				return trace.Wrap(err)
+			}
+
+			pluginV1, ok := plugin.(*types.PluginV1)
+			if !ok {
+				continue
+			}
+
+			if pluginV1.GetType() != types.PluginTypeEntraID {
+				continue
+			}
+
+			entraSettings := pluginV1.Spec.GetEntraId()
+			if entraSettings == nil || entraSettings.SyncSettings == nil || entraSettings.SyncSettings.SsoConnectorId != sc.GetName() {
+				continue
+			}
+
+			if match != nil {
+				return trace.BadParameter("multiple Entra plugins match connector")
+			}
+
+			match = pluginV1
+		}
+
+		if match == nil {
+			// Fallback to credentials.
+			creds := sc.GetCredentials()
+			if creds == nil {
+				return trace.BadParameter("missing credentials")
+			}
+			if err := creds.Validate(true); err != nil {
+				return trace.Wrap(err)
+			}
+		}
+
+		return trace.NotFound("no way to authenticate for MS Graph API")
+	}
 
 	slog.DebugContext(context.Background(), "connector validated",
 		teleport.ComponentKey, teleport.ComponentSAML,

@@ -782,8 +782,9 @@ type SAMLConnectorValidationOptions struct {
 	// NoFollowURLs disables following of URLs to populate SAML connector
 	// metadata. Useful when full metadata is not necessary, especially for
 	// endpoints like /webapi/ping which must not hang or fail.
-	NoFollowURLs bool
-	WithSecrets  bool
+	NoFollowURLs              bool
+	WithSecrets               bool
+	WithEntraIDGroupsProvider bool
 }
 
 // SAMLConnectorValidationOption is an option for validation of SAML connectors.
@@ -802,5 +803,11 @@ func SAMLConnectorValidationFollowURLs(follow bool) SAMLConnectorValidationOptio
 func SAMLConnectorValidationWithSecrets(withSecrets bool) SAMLConnectorValidationOption {
 	return func(opts *SAMLConnectorValidationOptions) {
 		opts.WithSecrets = withSecrets
+	}
+}
+
+func SAMLConnectorValidationWithEntraIDGroupsProvider(withProvider bool) SAMLConnectorValidationOption {
+	return func(opts *SAMLConnectorValidationOptions) {
+		opts.WithEntraIDGroupsProvider = withProvider
 	}
 }
