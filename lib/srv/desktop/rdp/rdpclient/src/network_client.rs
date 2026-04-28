@@ -16,8 +16,6 @@
  * along with this program.  If not, see <http://www.gnu.org/licenses/>.
  */
 
-use std::future::Future;
-
 use ironrdp_connector::sspi::generator::NetworkRequest;
 use ironrdp_connector::sspi::network_client::NetworkProtocol;
 use ironrdp_connector::{general_err, reason_err, ConnectorResult};
@@ -29,17 +27,12 @@ use url::Url;
 pub(crate) struct NetworkClient;
 
 impl ironrdp_tokio::NetworkClient for NetworkClient {
-    fn send<'a, 'b>(
-        &'a mut self,
-        request: &'b NetworkRequest,
-    ) -> impl Future<Output = ConnectorResult<Vec<u8>>>{
-        async move {
-            match &request.protocol {
-                NetworkProtocol::Tcp => self.send_tcp(&request.url, &request.data).await,
-                NetworkProtocol::Udp => Err(general_err!("UDP is not supported")),
-                NetworkProtocol::Http => Err(general_err!("HTTP is not supported")),
-                NetworkProtocol::Https => Err(general_err!("HTTPS is not supported")),
-            }
+    async fn send(&mut self, request: &NetworkRequest) -> ConnectorResult<Vec<u8>> {
+        match &request.protocol {
+            NetworkProtocol::Tcp => self.send_tcp(&request.url, &request.data).await,
+            NetworkProtocol::Udp => Err(general_err!("UDP is not supported")),
+            NetworkProtocol::Http => Err(general_err!("HTTP is not supported")),
+            NetworkProtocol::Https => Err(general_err!("HTTPS is not supported")),
         }
     }
 }

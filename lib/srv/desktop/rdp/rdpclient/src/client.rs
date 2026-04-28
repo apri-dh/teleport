@@ -29,7 +29,7 @@ use ironrdp_cliprdr::{Cliprdr, CliprdrClient, CliprdrSvcMessages};
 use ironrdp_connector::connection_activation::ConnectionActivationState;
 use ironrdp_connector::credssp::KerberosConfig;
 use ironrdp_connector::{
-    Config, ConnectorError, ConnectorErrorKind, Credentials, DesktopSize, SmartCardIdentity
+    Config, ConnectorError, ConnectorErrorKind, Credentials, DesktopSize, SmartCardIdentity,
 };
 use ironrdp_core::{encode_vec, EncodeError};
 use ironrdp_core::{function, WriteBuf};
@@ -62,7 +62,7 @@ use ironrdp_session::SessionErrorKind::Reason;
 use ironrdp_session::{reason_err, SessionError, SessionResult};
 use ironrdp_svc::{SvcMessage, SvcProcessor, SvcProcessorMessages};
 use ironrdp_tokio::{single_sequence_step_read, Framed, FramedWrite, TokioStream};
-use log::{debug, info, error, warn};
+use log::{debug, error, info, warn};
 use rand::{Rng, TryRngCore};
 use std::error::Error;
 use std::fmt::{Debug, Display, Formatter};
@@ -230,7 +230,11 @@ impl Client {
             .map_err(ClientError::UrlError)?
             .map(|kdc_url| KerberosConfig {
                 kdc_proxy_url: Some(kdc_url),
-                hostname: params.computer_name.as_deref().unwrap_or("missing.computer.name").to_string(),
+                hostname: params
+                    .computer_name
+                    .as_deref()
+                    .unwrap_or("missing.computer.name")
+                    .to_string(),
             });
         let connection_result = ironrdp_tokio::connect_finalize(
             upgraded,
@@ -409,15 +413,21 @@ impl Client {
                                         break;
                                     }
                                 }
-                            },
+                            }
                             ProcessorOutput::AutoDetect(req) => {
                                 // These are allegedly handled automatically internally,
                                 // so we'll just log them in case they're useful for debugging.
                                 debug!("received autodetect request: {:?}", req);
-                            },
-                            ProcessorOutput::MultitransportRequest(_) => error!("Received unsupported multi-transport request"),
-                            ProcessorOutput::PointerUpdate(_) => error!("Received unsupported slow-path pointer update"),
-                            ProcessorOutput::GraphicsUpdate(_) => error!("Received unsupported slow-path graphics update"),
+                            }
+                            ProcessorOutput::MultitransportRequest(_) => {
+                                error!("Received unsupported multi-transport request")
+                            }
+                            ProcessorOutput::PointerUpdate(_) => {
+                                error!("Received unsupported slow-path pointer update")
+                            }
+                            ProcessorOutput::GraphicsUpdate(_) => {
+                                error!("Received unsupported slow-path graphics update")
+                            }
                         }
                     }
                 }
@@ -742,7 +752,7 @@ impl Client {
             // received. Failure to acquire the DVC is normal until this point in the connection setup.
             let Some(dvc) = x224_processor.get_dvc::<DisplayControlClient>() else {
                 info!("DisplayControlClient is not yet available");
-                return Ok(())
+                return Ok(());
             };
 
             if dvc.is_open() {
@@ -1514,7 +1524,6 @@ fn create_config(params: &ConnectParams, pin: String, cgo_handle: CgoHandle) -> 
         hardware_id: Some(params.client_id),
         alternate_shell: "".to_string(),
         work_dir: "".to_string(),
-        // TODO (rhammonds): Try compression sometime?
         compression_type: None,
         multitransport_flags: None,
     }
