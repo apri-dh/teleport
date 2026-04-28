@@ -3524,6 +3524,131 @@
       "source": "/reference/infrastructure-as-code/teleport-resources/saml-idpservice-provider-v1/",
       "destination": "/reference/infrastructure-as-code/teleport-resources/saml-idp-service-provider-v1/",
       "permanent": true
+    },
+    {
+      "source": "/zero-trust-access/infrastructure-as-code/",
+      "destination": "/zero-trust-access/",
+      "permanent": true
+    },
+    {
+      "source": "/zero-trust-access/infrastructure-as-code/managing-resources/access-list/",
+      "destination": "/configuration/managing-resources/access-list/",
+      "permanent": true
+    },
+    {
+      "source": "/zero-trust-access/infrastructure-as-code/managing-resources/agentless-ssh-servers/",
+      "destination": "/configuration/managing-resources/agentless-ssh-servers/",
+      "permanent": true
+    },
+    {
+      "source": "/zero-trust-access/infrastructure-as-code/managing-resources/kubernetes-oidc-join-token/",
+      "destination": "/configuration/managing-resources/kubernetes-oidc-join-token/",
+      "permanent": true
+    },
+    {
+      "source": "/zero-trust-access/infrastructure-as-code/managing-resources/login-rules-operator/",
+      "destination": "/configuration/managing-resources/login-rules-operator/",
+      "permanent": true
+    },
+    {
+      "source": "/zero-trust-access/infrastructure-as-code/managing-resources/login-rules-terraform/",
+      "destination": "/configuration/managing-resources/login-rules-terraform/",
+      "permanent": true
+    },
+    {
+      "source": "/zero-trust-access/infrastructure-as-code/managing-resources/",
+      "destination": "/configuration/managing-resources/",
+      "permanent": true
+    },
+    {
+      "source": "/zero-trust-access/infrastructure-as-code/managing-resources/trusted-cluster/",
+      "destination": "/configuration/managing-resources/trusted-cluster/",
+      "permanent": true
+    },
+    {
+      "source": "/zero-trust-access/infrastructure-as-code/managing-resources/user-and-role/",
+      "destination": "/configuration/managing-resources/user-and-role/",
+      "permanent": true
+    },
+    {
+      "source": "/zero-trust-access/infrastructure-as-code/static-and-dynamic-configuration/",
+      "destination": "/reference/deployment/static-and-dynamic-configuration/",
+      "permanent": true
+    },
+    {
+      "source": "/zero-trust-access/infrastructure-as-code/teleport-operator/secret-lookup/",
+      "destination": "/configuration/teleport-operator/secret-lookup/",
+      "permanent": true
+    },
+    {
+      "source": "/zero-trust-access/infrastructure-as-code/teleport-operator/teleport-operator-helm/",
+      "destination": "/configuration/teleport-operator/teleport-operator-helm/",
+      "permanent": true
+    },
+    {
+      "source": "/zero-trust-access/infrastructure-as-code/teleport-operator/teleport-operator-standalone/",
+      "destination": "/configuration/teleport-operator/teleport-operator-standalone/",
+      "permanent": true
+    },
+    {
+      "source": "/zero-trust-access/infrastructure-as-code/teleport-operator/",
+      "destination": "/configuration/teleport-operator/",
+      "permanent": true
+    },
+    {
+      "source": "/zero-trust-access/infrastructure-as-code/terraform-provider/ci-or-cloud/",
+      "destination": "/configuration/terraform-provider/ci-or-cloud/",
+      "permanent": true
+    },
+    {
+      "source": "/zero-trust-access/infrastructure-as-code/terraform-provider/dedicated-server/",
+      "destination": "/configuration/terraform-provider/dedicated-server/",
+      "permanent": true
+    },
+    {
+      "source": "/zero-trust-access/infrastructure-as-code/terraform-provider/env0/",
+      "destination": "/configuration/terraform-provider/env0/",
+      "permanent": true
+    },
+    {
+      "source": "/zero-trust-access/infrastructure-as-code/terraform-provider/import-existing-resources/",
+      "destination": "/configuration/terraform-provider/import-existing-resources/",
+      "permanent": true
+    },
+    {
+      "source": "/zero-trust-access/infrastructure-as-code/terraform-provider/local/",
+      "destination": "/configuration/terraform-provider/local/",
+      "permanent": true
+    },
+    {
+      "source": "/zero-trust-access/infrastructure-as-code/terraform-provider/long-lived-credentials/",
+      "destination": "/configuration/terraform-provider/long-lived-credentials/",
+      "permanent": true
+    },
+    {
+      "source": "/zero-trust-access/infrastructure-as-code/terraform-provider/spacelift/",
+      "destination": "/configuration/terraform-provider/spacelift/",
+      "permanent": true
+    },
+    {
+      "source": "/zero-trust-access/infrastructure-as-code/terraform-provider/terraform-cloud/",
+      "destination": "/configuration/terraform-provider/terraform-cloud/",
+      "permanent": true
+    },
+    {
+      "source": "/zero-trust-access/infrastructure-as-code/terraform-provider/terraform-getting-started/",
+      "destination": "/configuration/terraform-provider/terraform-getting-started/",
+      "permanent": true
+    },
+    {
+      "source": "/zero-trust-access/infrastructure-as-code/terraform-provider/",
+      "destination": "/configuration/terraform-provider/",
+      "permanent": true
+    },
+    {
+      "source": "/zero-trust-access/infrastructure-as-code/using-tctl/",
+      "destination": "/configuration/using-tctl/",
+      "permanent": true
     }
   ]
 }
