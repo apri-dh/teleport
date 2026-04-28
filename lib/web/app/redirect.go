@@ -152,7 +152,7 @@ const appRedirectHTML = `
               // application's launcher. The launcher gates fragment
               // forwarding on requiredApps.length <= 1, so on this
               // branch origFragment should already be empty. Drop
-              // it unconditionally as a defence-in-depth backstop:
+              // it unconditionally as a defense-in-depth backstop:
               // an intermediate app must not see values that were
               // meant for the user's originally requested app
               // (e.g. an OAuth implicit-flow access token or a

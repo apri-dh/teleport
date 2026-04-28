@@ -185,7 +185,7 @@ export function AppLauncher({
         // Skip `fragment` on a required-apps chain so the original
         // fragment never enters the chain in the first place. The
         // inline JS in `redirect.go` also drops the fragment on
-        // the chain branch as a defence-in-depth backstop.
+        // the chain branch as a defense-in-depth backstop.
         // `useLocation().hash` always has a leading `#` when
         // non-empty, so `slice(1)` strips it before packing.
         const hashParams = new URLSearchParams();

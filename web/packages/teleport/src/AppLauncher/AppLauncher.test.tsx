@@ -128,7 +128,7 @@ const launcherPathTestCases: {
     // Chain-redirect case: the launcher gates fragment forwarding
     // on requiredApps.length <= 1 so the fragment never enters the
     // chain. The inline JS in lib/web/app/redirect.go drops the
-    // fragment on the chain branch as a defence-in-depth backstop.
+    // fragment on the chain branch as a defense-in-depth backstop.
     // The user's original fragment is intentionally lost when a
     // required-apps chain is in play, to avoid exposing it to
     // intermediate apps' origins.
