@@ -113,6 +113,17 @@ const launcherPathTestCases: {
     expectedPath:
       'x-teleport-auth?state=ABC&subject=subject-cookie-value&path=%2Fcallback#value=cookie-value&fragment=access_token%3Dsecret%26token_type%3DBearer',
   },
+  {
+    // Chain-redirect case: the launcher packs `fragment=` in the
+    // URL hash regardless of `requiredApps.length`. The inline JS
+    // in `lib/web/app/redirect.go` is responsible for dropping it
+    // on the chain branch so the fragment never crosses an app
+    // boundary. This test pins the launcher's side of that contract.
+    name: 'with state, path, fragment, and required-apps chain',
+    path: '?state=ABC&path=%2Ffoo&required-apps=app1,app2#secret',
+    expectedPath:
+      'x-teleport-auth?state=ABC&subject=subject-cookie-value&required-apps=app1%2Capp2&path=%2Ffoo#value=cookie-value&fragment=secret',
+  },
 ];
 
 describe('app launcher path is properly formed', () => {

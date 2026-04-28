@@ -115,7 +115,7 @@ const appRedirectHTML = `
         // The URL fragment carries two named values: 'value' is the
         // session cookie value, and 'fragment' (optional) is the
         // user's original URL fragment. Browsers do not send the
-        // fragment to the server (RFC 9110 7.1), so values placed
+        // fragment to the server (RFC 9110 § 7.1), so values placed
         // here stay client-side. The original fragment is
         // reattached to the final navigation below.
         var hashParams = new URLSearchParams(window.location.hash.slice(1));
@@ -167,7 +167,11 @@ const appRedirectHTML = `
                   window.location.replace(currentOrigin)
                 }
               } else if (origFragment) {
-                window.location.replace(currentOrigin + '#' + origFragment)
+                // Use URL.hash (not string concat) so encoding
+                // matches the path branch above.
+                var rootUrl = new URL('/', currentOrigin)
+                rootUrl.hash = origFragment
+                window.location.replace(rootUrl.toString())
               } else {
                 window.location.replace(currentOrigin)
               }

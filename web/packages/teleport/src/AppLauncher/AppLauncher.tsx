@@ -170,11 +170,11 @@ export function AppLauncher({
 
         // Pass the session cookie value and the original URL fragment
         // through the URL fragment of the redirect target so neither
-        // hits the proxy as a query parameter. The server already
-        // relies on this for `value` (the session cookie); `fragment`
-        // extends the same pattern to preserve the user's original
-        // fragment without exposing it to proxy access logs. The
-        // inline JS in `lib/web/app/redirect.go` parses both fields.
+        // hits the proxy as a query parameter. The inline JS in
+        // `lib/web/app/redirect.go` already relies on this for
+        // `value` (the session cookie); `fragment` extends the same
+        // pattern to preserve the user's original fragment without
+        // exposing it to proxy access logs.
         const hashParams = new URLSearchParams();
         hashParams.set('value', session.cookieValue);
         if (hash) {
