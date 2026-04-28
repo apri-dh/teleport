@@ -118,11 +118,17 @@ const appRedirectHTML = `
         // fragment to the server (RFC 9110 § 7.1), so values placed
         // here stay client-side. The original fragment is
         // reattached to the final navigation below.
+        //
+        // window.location.hash includes a leading '#' when
+        // non-empty, so slice(1) strips it before URLSearchParams
+        // parses the body.
         var hashParams = new URLSearchParams(window.location.hash.slice(1));
         var cookieValue = hashParams.get('value');
         if (!cookieValue) {
           return;
         }
+        // origFragment does not include a leading '#'; the URL.hash
+        // setter below adds it back.
         var origFragment = hashParams.get('fragment');
         const data = {
           state_value: stateValue,
@@ -143,14 +149,18 @@ const appRedirectHTML = `
             const nextAppRedirectUrl = response.headers.get("X-Teleport-NextAppRedirectUrl")
             if (nextAppRedirectUrl) {
               // The required-app chain navigates to a different
-              // application's launcher. Do not carry the original
-              // fragment forward: it was meant for the user's
-              // originally requested app and may contain sensitive
-              // values (e.g. an OAuth implicit-flow access token or
-              // a password-reset token) that must not be exposed to
-              // intermediate apps in the chain. Fragment
-              // restoration only happens on the final navigation
-              // back to the originally requested app URL below.
+              // application's launcher. The launcher gates fragment
+              // forwarding on requiredApps.length <= 1, so on this
+              // branch origFragment should already be empty. Drop
+              // it unconditionally as a defence-in-depth backstop:
+              // an intermediate app must not see values that were
+              // meant for the user's originally requested app
+              // (e.g. an OAuth implicit-flow access token or a
+              // password-reset token). As a consequence, chain-
+              // redirected apps lose the original fragment
+              // entirely; "final navigation" below means the final
+              // navigation of this hop, not the user's originally
+              // requested URL.
               window.location.replace(nextAppRedirectUrl)
               return;
             }
@@ -167,8 +177,8 @@ const appRedirectHTML = `
                   window.location.replace(currentOrigin)
                 }
               } else if (origFragment) {
-                // Use URL.hash (not string concat) so encoding
-                // matches the path branch above.
+                // Match the path branch: assign via URL.hash so
+                // the browser handles encoding.
                 var rootUrl = new URL('/', currentOrigin)
                 rootUrl.hash = origFragment
                 window.location.replace(rootUrl.toString())
