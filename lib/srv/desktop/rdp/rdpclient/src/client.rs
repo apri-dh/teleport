@@ -29,7 +29,7 @@ use ironrdp_cliprdr::{Cliprdr, CliprdrClient, CliprdrSvcMessages};
 use ironrdp_connector::connection_activation::ConnectionActivationState;
 use ironrdp_connector::credssp::KerberosConfig;
 use ironrdp_connector::{
-    Config, ConnectorError, ConnectorErrorKind, Credentials, DesktopSize, Sequence, SmartCardIdentity
+    Config, ConnectorError, ConnectorErrorKind, Credentials, DesktopSize, SmartCardIdentity
 };
 use ironrdp_core::{encode_vec, EncodeError};
 use ironrdp_core::{function, WriteBuf};
@@ -1052,6 +1052,7 @@ impl Client {
     /// let cliprdr = Self::get_svc_processor::<Cliprdr>(&mut x224_processor)?;
     /// // Now we can call methods on the Cliprdr processor.
     /// ```
+    #[allow(dead_code)]
     fn get_svc_processor<'a, S>(
         x224_processor: &'a mut MutexGuard<'_, x224::Processor>,
     ) -> Result<&'a S, ClientError>
