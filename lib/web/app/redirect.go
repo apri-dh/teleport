@@ -127,9 +127,9 @@ const appRedirectHTML = `
         if (!cookieValue) {
           return;
         }
-        // origFragment does not include a leading '#'; the URL.hash
+        // fragment does not include a leading '#'; the URL.hash
         // setter below adds it back.
-        var origFragment = hashParams.get('fragment');
+        var fragment = hashParams.get('fragment');
         const data = {
           state_value: stateValue,
           cookie_value: cookieValue,
@@ -151,7 +151,7 @@ const appRedirectHTML = `
               // The required-app chain navigates to a different
               // application's launcher. The launcher gates fragment
               // forwarding on requiredApps.length <= 1, so on this
-              // branch origFragment should already be empty. Drop
+              // branch fragment should already be empty. Drop
               // it unconditionally as a defense-in-depth backstop:
               // an intermediate app must not see values that were
               // meant for the user's originally requested app
@@ -168,19 +168,19 @@ const appRedirectHTML = `
               // if a path parameter was passed through the redirect, append that path to the current origin
               if (path) {
                 var redirectUrl = new URL(path, currentOrigin)
-                if (origFragment) {
-                  redirectUrl.hash = origFragment
+                if (fragment) {
+                  redirectUrl.hash = fragment
                 }
                 if (redirectUrl.origin === currentOrigin) {
                   window.location.replace(redirectUrl.toString())
                 } else {
                   window.location.replace(currentOrigin)
                 }
-              } else if (origFragment) {
+              } else if (fragment) {
                 // Match the path branch: assign via URL.hash so
                 // the browser handles encoding.
                 var rootUrl = new URL('/', currentOrigin)
-                rootUrl.hash = origFragment
+                rootUrl.hash = fragment
                 window.location.replace(rootUrl.toString())
               } else {
                 window.location.replace(currentOrigin)
