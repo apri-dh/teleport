@@ -16,13 +16,12 @@
  * along with this program.  If not, see <http://www.gnu.org/licenses/>.
  */
 
+import { resolveThemeToColors } from '@gravitational/design-system';
 import { ComponentPropsWithoutRef } from 'react';
 import styled, { DefaultTheme, useTheme } from 'styled-components';
 
 import Box from 'design/Box';
 import Flex, { Stack } from 'design/Flex';
-import { resolveThemeToColors } from '@gravitational/design-system';
-
 import { darken, emphasize } from 'design/theme/utils/colorManipulator';
 
 /**
@@ -99,8 +98,7 @@ const CircleButton = styled(Box)<{ $color: string }>`
   height: 12px;
   border-radius: 50%;
   background-color: ${props => props.$color};
-  border: 1px solid
-    ${props => darken(resolveThemeToColors(props.$color), 0.2)};
+  border: 1px solid ${props => darken(resolveThemeToColors(props.$color), 0.2)};
 `;
 
 const topBarColor = (theme: DefaultTheme): string =>
