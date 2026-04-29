@@ -8,11 +8,12 @@ import (
 	"testing"
 
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/to"
+	"github.com/stretchr/testify/require"
+
 	"github.com/gravitational/teleport"
 	"github.com/gravitational/teleport/lib/msgraph/models"
 	"github.com/gravitational/teleport/lib/msgraph/msgraphtest"
 	"github.com/gravitational/teleport/lib/utils"
-	"github.com/stretchr/testify/require"
 )
 
 func TestSetUsers(t *testing.T) {

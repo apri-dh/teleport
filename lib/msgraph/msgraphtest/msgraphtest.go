@@ -28,9 +28,10 @@ import (
 	"sync"
 
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/to"
+	"github.com/gravitational/trace"
+
 	"github.com/gravitational/teleport/api/utils"
 	"github.com/gravitational/teleport/lib/msgraph/models"
-	"github.com/gravitational/trace"
 )
 
 // Server defines fake server.
@@ -193,11 +194,11 @@ func (s *Server) handleListGroupsDelta(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) handleListGroupMembers(w http.ResponseWriter, r *http.Request) {
-	groupID := r.PathValue("id")
-
 	s.mu.RLock()
+	defer s.mu.RUnlock()
+
+	groupID := r.PathValue("id")
 	groupMembers := s.Storage.GroupMembers[groupID]
-	s.mu.RUnlock()
 
 	members := make([]map[string]interface{}, 0, len(groupMembers))
 	for _, member := range groupMembers {
@@ -224,11 +225,11 @@ func (s *Server) handleListGroupMembers(w http.ResponseWriter, r *http.Request) 
 }
 
 func (s *Server) handleListGroupOwners(w http.ResponseWriter, r *http.Request) {
-	groupID := r.PathValue("id")
-
 	s.mu.RLock()
+	defer s.mu.RUnlock()
+
+	groupID := r.PathValue("id")
 	owners := s.Storage.GroupOwners[groupID]
-	s.mu.RUnlock()
 
 	jsonResponse(w, map[string]interface{}{
 		"value": owners,
@@ -306,13 +307,13 @@ func (s *Server) SetUsers(users []*models.User) {
 // DeleteUsers removes users from the storage.
 func (s *Server) DeleteUsers(users []string) {
 	s.mu.Lock()
-
+	defer s.mu.Unlock()
 	for _, userID := range users {
 		if userID != "" {
 			delete(s.Storage.Users, userID)
 		}
 	}
-	s.mu.Unlock()
+
 	// Update user delta
 	var userDelta []models.ListUsersDeltaResponse
 	for _, userID := range users {
@@ -326,12 +327,14 @@ func (s *Server) DeleteUsers(users []string) {
 				Reason: to.Ptr("deleted"),
 			},
 		})
-
-		s.deleteGroupMemberships(userID)
-		s.deleteGroupOwnerships(userID)
 	}
 
 	appendUserDeltas(s.Storage, userDelta...)
+
+	for _, userID := range users {
+		s.deleteGroupMemberships(userID)
+		s.deleteGroupOwnerships(userID)
+	}
 }
 
 // SetGroups updates groups storage.
@@ -355,25 +358,32 @@ func (s *Server) SetGroups(groups []*models.Group) {
 }
 
 func (s *Server) deleteGroupMemberships(memberID string) {
+	// deleteGroupMemberships expects caller to hold the lock.
 	for gid := range s.Storage.GroupMembers {
-		s.DeleteGroupMembers(gid, []string{memberID})
+		s.deleteGroupMembers(gid, []string{memberID})
 	}
 }
 
 func (s *Server) deleteGroupOwnerships(ownerID string) {
+	// deleteGroupOwnerships expects the caller to hold the lock.
 	for gid := range s.Storage.GroupOwners {
-		s.DeleteGroupOwners(gid, []string{ownerID})
+		s.deleteGroupOwners(gid, []string{ownerID})
 	}
 }
 
+// DeleteGroups deletes the groups from storage.
 func (s *Server) DeleteGroups(groups []string) {
 	s.mu.Lock()
+	defer s.mu.Unlock()
 	for _, groupID := range groups {
-		if groupID != "" {
-			delete(s.Storage.Groups, groupID)
+		if groupID == "" {
+			continue
 		}
+		delete(s.Storage.Groups, groupID)
+		delete(s.Storage.GroupMembers, groupID)
+		delete(s.Storage.GroupOwners, groupID)
 	}
-	s.mu.Unlock()
+
 	// update group delta
 	var groupDeltas []models.ListGroupsDeltaResponse
 	for _, groupID := range groups {
@@ -388,10 +398,13 @@ func (s *Server) DeleteGroups(groups []string) {
 			},
 		})
 
-		s.deleteGroupMemberships(groupID)
 	}
 
 	appendGroupDeltas(s.Storage, groupDeltas...)
+
+	for _, groupID := range groups {
+		s.deleteGroupMemberships(groupID)
+	}
 }
 
 // SetGroupMembers updates group members storage.
@@ -401,17 +414,31 @@ func (s *Server) SetGroupMembers(groupID string, members []models.GroupMember) {
 
 	existingMembers := make(map[string]struct{})
 	for _, m := range s.Storage.GroupMembers[groupID] {
+		if m.GetID() == nil {
+			continue
+		}
 		existingMembers[*m.GetID()] = struct{}{}
 	}
 	allMembers := slices.Concat(s.Storage.GroupMembers[groupID], members)
-	s.Storage.GroupMembers[groupID] = utils.DeduplicateAny(allMembers, func(m1, m2 models.GroupMember) bool { return m1.GetID() == m2.GetID() })
+	s.Storage.GroupMembers[groupID] = utils.DeduplicateAny(allMembers,
+		func(m1, m2 models.GroupMember) bool {
+			if m1.GetID() == nil || m2.GetID() == nil {
+				return false
+			}
+
+			return *m1.GetID() == *m2.GetID()
+		})
 
 	var memberDeltas []models.MembersDelta
 	for _, m := range members {
+		if m.GetID() == nil {
+			continue
+		}
 		if _, ok := existingMembers[*m.GetID()]; ok {
 			// This may be a no op if member already exists.
 			continue
 		}
+		existingMembers[*m.GetID()] = struct{}{}
 		switch m.(type) {
 		case *models.User:
 			memberDeltas = append(memberDeltas, models.MembersDelta{
@@ -446,6 +473,9 @@ func (s *Server) SetGroupMembers(groupID string, members []models.GroupMember) {
 	deltas := s.Storage.GroupsDelta[latestKey]
 	found := false
 	for i, d := range deltas {
+		if d.Group == nil || d.Group.GetID() == nil {
+			continue
+		}
 		if *d.Group.GetID() == groupID {
 			found = true
 			d.Members = append(d.Members, memberDeltas...)
@@ -472,10 +502,17 @@ func (s *Server) DeleteGroupMembers(groupID string, members []string) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
+	s.deleteGroupMembers(groupID, members)
+}
+
+func (s *Server) deleteGroupMembers(groupID string, members []string) {
 	groupMembers := s.Storage.GroupMembers[groupID]
 	newMembers := []models.GroupMember{}
 	newMembersDeltas := []models.MembersDelta{}
 	for _, gm := range groupMembers {
+		if gm.GetID() == nil {
+			continue
+		}
 		if slices.Contains(members, *gm.GetID()) {
 			// only expecting owner of user type.
 			newMembersDeltas = append(newMembersDeltas, models.MembersDelta{
@@ -509,6 +546,9 @@ func (s *Server) DeleteGroupMembers(groupID string, members []string) {
 	deltas := s.Storage.GroupsDelta[latestKey]
 	found := false
 	for i, d := range deltas {
+		if d.Group == nil || d.Group.GetID() == nil {
+			continue
+		}
 		if *d.Group.GetID() == groupID {
 			found = true
 			d.Members = append(d.Members, newMembersDeltas...)
@@ -537,17 +577,33 @@ func (s *Server) SetGroupOwners(groupID string, owners []*models.User) {
 
 	existingOwners := make(map[string]struct{})
 	for _, m := range s.Storage.GroupOwners[groupID] {
+		if m.GetID() == nil {
+			continue
+		}
 		existingOwners[*m.GetID()] = struct{}{}
 	}
 	allowners := slices.Concat(s.Storage.GroupOwners[groupID], owners)
-	s.Storage.GroupOwners[groupID] = utils.DeduplicateAny(allowners, func(m1, m2 *models.User) bool { return *m1.ID == *m2.ID })
+	s.Storage.GroupOwners[groupID] = utils.DeduplicateAny(allowners,
+		func(m1, m2 *models.User) bool {
+			if m1.GetID() == nil || m2.GetID() == nil {
+				return false
+			}
+			return *m1.GetID() == *m2.GetID()
+		})
 
 	var ownerDeltas []models.OwnersDelta
-	for _, u := range owners {
+	for _, o := range owners {
+		if o.GetID() == nil {
+			continue
+		}
+		if _, ok := existingOwners[*o.GetID()]; ok {
+			continue
+		}
+		existingOwners[*o.GetID()] = struct{}{}
 		ownerDeltas = append(ownerDeltas, models.OwnersDelta{
 			User: &models.User{
 				DirectoryObject: models.DirectoryObject{
-					ID: u.GetID(),
+					ID: o.GetID(),
 				},
 			},
 			Type: "#microsoft.graph.user",
@@ -568,6 +624,9 @@ func (s *Server) SetGroupOwners(groupID string, owners []*models.User) {
 	deltas := s.Storage.GroupsDelta[latestKey]
 	found := false
 	for i, d := range deltas {
+		if d.Group == nil || d.Group.GetID() == nil {
+			continue
+		}
 		if *d.Group.GetID() == groupID {
 			found = true
 			d.Owners = append(d.Owners, ownerDeltas...)
@@ -595,10 +654,17 @@ func (s *Server) DeleteGroupOwners(groupID string, owners []string) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
+	s.deleteGroupOwners(groupID, owners)
+}
+
+func (s *Server) deleteGroupOwners(groupID string, owners []string) {
 	groupOwners := s.Storage.GroupOwners[groupID]
 	newOwners := []*models.User{}
 	deletedOwnersDelta := []models.OwnersDelta{}
 	for _, o := range groupOwners {
+		if o.GetID() == nil {
+			continue
+		}
 		if slices.Contains(owners, *o.GetID()) {
 			// only expecting owner of user type.
 			deletedOwnersDelta = append(deletedOwnersDelta, models.OwnersDelta{
@@ -634,6 +700,9 @@ func (s *Server) DeleteGroupOwners(groupID string, owners []string) {
 	deltas := s.Storage.GroupsDelta[latestKey]
 	found := false
 	for i, d := range deltas {
+		if d.Group == nil || d.Group.GetID() == nil {
+			continue
+		}
 		if *d.Group.GetID() == groupID {
 			found = true
 			d.Owners = append(d.Owners, deletedOwnersDelta...)
