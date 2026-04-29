@@ -26,7 +26,9 @@ import (
 // Storage to be used by the Server
 type Storage struct {
 	Users        map[string]*models.User
+	UsersDelta   map[int][]models.ListUsersDeltaResponse
 	Groups       map[string]*models.Group
+	GroupsDelta  map[int][]models.ListGroupsDeltaResponse
 	GroupMembers map[string][]models.GroupMember
 	GroupOwners  map[string][]*models.User
 	Applications map[string]*models.Application
@@ -36,7 +38,9 @@ type Storage struct {
 func NewStorage() *Storage {
 	return &Storage{
 		Users:        make(map[string]*models.User),
+		UsersDelta:   make(map[int][]models.ListUsersDeltaResponse),
 		Groups:       make(map[string]*models.Group),
+		GroupsDelta:  make(map[int][]models.ListGroupsDeltaResponse),
 		GroupMembers: make(map[string][]models.GroupMember),
 		GroupOwners:  make(map[string][]*models.User),
 		Applications: make(map[string]*models.Application),
