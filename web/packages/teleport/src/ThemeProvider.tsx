@@ -18,7 +18,6 @@
 
 import {
   createThemeSystem,
-  LEGACY_THEME_COLORS,
   ThemeProvider as NewThemeProvider,
   TELEPORT_THEME,
   THEMES,
@@ -30,10 +29,10 @@ import {
   bblpTheme,
   darkTheme,
   lightTheme,
+  resolveTheme,
   Theme,
   type ThemeDefinition,
 } from 'design/theme';
-import { sharedColors } from 'design/theme/themes/sharedStyles';
 import { ConfiguredThemeProvider } from 'design/ThemeProvider';
 import { Theme as ThemePreference } from 'gen-proto-ts/teleport/userpreferences/v1/theme_pb';
 
@@ -70,7 +69,7 @@ export function ThemeProvider({ children }: PropsWithChildren) {
 
       case UiThemeMode.LightAndDark:
         if (themePreference === ThemePreference.UNSPECIFIED) {
-          return getPrefersDark() ? 'light' : 'dark';
+          return getPrefersDark() ? 'dark' : 'light';
         }
 
         return themePreference === ThemePreference.LIGHT ? 'light' : 'dark';
@@ -84,13 +83,7 @@ export function ThemeProvider({ children }: PropsWithChildren) {
       theme = customThemes[cfg.customTheme];
     }
 
-    return {
-      ...theme,
-      colors: {
-        ...sharedColors,
-        ...LEGACY_THEME_COLORS,
-      },
-    };
+    return resolveTheme(theme);
   }, [themePreference]);
 
   return (
@@ -139,7 +132,7 @@ function themePreferenceToTheme(
   themePreference: ThemePreference
 ): ThemeDefinition {
   if (themePreference === ThemePreference.UNSPECIFIED) {
-    return getPrefersDark() ? lightTheme : darkTheme;
+    return getPrefersDark() ? darkTheme : lightTheme;
   }
   return themePreference === ThemePreference.LIGHT ? lightTheme : darkTheme;
 }

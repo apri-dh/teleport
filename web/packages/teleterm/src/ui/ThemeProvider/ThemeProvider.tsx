@@ -18,7 +18,6 @@
 
 import {
   createThemeSystem,
-  LEGACY_THEME_COLORS,
   TELEPORT_THEME,
   ThemeProvider as NewThemeProvider,
 } from '@gravitational/design-system';
@@ -28,7 +27,7 @@ import {
   StyleSheetManager,
 } from 'styled-components';
 
-import { sharedColors } from 'design/theme/themes/sharedStyles';
+import { resolveTheme } from 'design/theme';
 import { Theme } from 'design/theme/themes/types';
 import { shouldForwardProp } from 'design/ThemeProvider';
 
@@ -66,13 +65,7 @@ export const ThemeProvider = (props: React.PropsWithChildren<unknown>) => {
   }, [ctx.mainProcessClient]);
 
   const legacyTheme: Theme = useMemo(
-    () => ({
-      ...activeTheme,
-      colors: {
-        ...sharedColors,
-        ...LEGACY_THEME_COLORS,
-      },
-    }),
+    () => resolveTheme(activeTheme),
     [activeTheme]
   );
 

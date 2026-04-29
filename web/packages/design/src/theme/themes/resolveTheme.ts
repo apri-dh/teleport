@@ -1,6 +1,6 @@
-/*
+/**
  * Teleport
- * Copyright (C) 2023  Gravitational, Inc.
+ * Copyright (C) 2026  Gravitational, Inc.
  *
  * This program is free software: you can redistribute it and/or modify
  * it under the terms of the GNU Affero General Public License as published by
@@ -16,16 +16,23 @@
  * along with this program.  If not, see <http://www.gnu.org/licenses/>.
  */
 
-import styled from 'styled-components';
+import { LEGACY_THEME_COLORS } from '@gravitational/design-system';
 
-import Box from './../Box';
+import { sharedColors } from './sharedStyles';
+import type { Theme, ThemeDefinition } from './types';
 
-const Card = styled(Box)`
-  box-shadow: ${props => props.theme.boxShadow[2]};
-  border-radius: ${props => props.theme.radii[3]}px;
-  background-color: ${props => props.theme.colors.levels.surface};
-`;
-
-Card.displayName = 'Card';
-
-export default Card;
+/**
+ * Combines a `ThemeDefinition` with the legacy color palette to produce a
+ * complete `Theme`. Use anywhere a theme is fed into a styled-components
+ * `ThemeProvider` outside the runtime providers (tests, storybook, error
+ * fallbacks rendered above the runtime provider).
+ */
+export function resolveTheme(definition: ThemeDefinition): Theme {
+  return {
+    ...definition,
+    colors: {
+      ...sharedColors,
+      ...LEGACY_THEME_COLORS,
+    },
+  };
+}

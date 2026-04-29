@@ -16,7 +16,6 @@
  * along with this program.  If not, see <http://www.gnu.org/licenses/>.
  */
 
-import { LEGACY_THEME_COLORS } from '@gravitational/design-system';
 import '@testing-library/jest-dom';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import {
@@ -37,10 +36,8 @@ import { setupServer } from 'msw/node';
 import { PropsWithChildren, ReactNode } from 'react';
 import { MemoryRouter, useLocation } from 'react-router';
 
-import { darkTheme, type Theme } from 'design/theme';
+import { darkTheme, resolveTheme } from 'design/theme';
 import { ConfiguredThemeProvider } from 'design/ThemeProvider';
-
-import { sharedColors } from '../theme/themes/sharedStyles';
 
 export const testQueryClient = new QueryClient({
   defaultOptions: {
@@ -50,13 +47,7 @@ export const testQueryClient = new QueryClient({
   },
 });
 
-const legacyTheme: Theme = {
-  ...darkTheme,
-  colors: {
-    ...sharedColors,
-    ...LEGACY_THEME_COLORS,
-  },
-};
+const legacyTheme = resolveTheme(darkTheme);
 
 export function Providers({ children }: { children: ReactNode }) {
   return (

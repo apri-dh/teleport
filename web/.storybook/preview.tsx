@@ -24,7 +24,12 @@ import { ComponentType, PropsWithChildren } from 'react';
 import { sb } from 'storybook/test';
 
 import Box from '../packages/design/src/Box';
-import { bblpTheme, darkTheme, lightTheme } from '../packages/design/src/theme';
+import {
+  bblpTheme,
+  darkTheme,
+  lightTheme,
+  resolveTheme,
+} from '../packages/design/src/theme';
 import { Theme } from '../packages/design/src/theme/themes/types';
 import { ConfiguredThemeProvider } from '../packages/design/src/ThemeProvider';
 import cfg from '../packages/teleport/src/config';
@@ -87,23 +92,24 @@ interface ThemeDecoratorProps {
 
 function ThemeDecorator(props: PropsWithChildren<ThemeDecoratorProps>) {
   let ThemeProvider: ComponentType<PropsWithChildren<{ theme: Theme }>>;
-  let theme = darkTheme;
+  let theme: Theme = resolveTheme(darkTheme);
 
   if (props.title.startsWith('Teleterm/')) {
     ThemeProvider = TeletermThemeProvider;
-    theme =
-      props.theme === 'Dark Theme' ? teletermDarkTheme : teletermLightTheme;
+    theme = resolveTheme(
+      props.theme === 'Dark Theme' ? teletermDarkTheme : teletermLightTheme
+    );
   } else {
     ThemeProvider = ConfiguredThemeProvider;
     switch (props.theme) {
       case 'Dark Theme':
-        theme = darkTheme;
+        theme = resolveTheme(darkTheme);
         break;
       case 'Light Theme':
-        theme = lightTheme;
+        theme = resolveTheme(lightTheme);
         break;
       case 'BBLP Theme':
-        theme = bblpTheme;
+        theme = resolveTheme(bblpTheme);
         break;
     }
   }

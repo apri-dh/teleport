@@ -1,4 +1,3 @@
-import { LEGACY_THEME_COLORS } from '@gravitational/design-system';
 /**
  * Teleport
  * Copyright (C) 2024 Gravitational, Inc.
@@ -19,8 +18,7 @@ import { LEGACY_THEME_COLORS } from '@gravitational/design-system';
 import styled from 'styled-components';
 
 import { Failed } from 'design/CardError';
-import { sharedColors } from 'design/theme/themes/sharedStyles';
-import type { Theme } from 'design/theme/themes/types';
+import { resolveTheme } from 'design/theme';
 
 import { StaticThemeProvider } from 'teleterm/ui/ThemeProvider';
 import { darkTheme } from 'teleterm/ui/ThemeProvider/theme';
@@ -35,13 +33,7 @@ export const StyledApp = styled.div`
   flex-direction: column;
 `;
 
-const theme: Theme = {
-  ...darkTheme,
-  colors: {
-    ...sharedColors,
-    ...LEGACY_THEME_COLORS,
-  },
-};
+const theme = resolveTheme(darkTheme);
 
 export const FailedApp = (props: { message: string }) => {
   return (
