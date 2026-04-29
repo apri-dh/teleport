@@ -24,6 +24,7 @@ import {
   UiThemeMode,
 } from '@gravitational/design-system';
 import { useEffect, useMemo, useState, type PropsWithChildren } from 'react';
+import { useMediaQuery } from 'usehooks-ts';
 
 import {
   bblpTheme,
@@ -47,6 +48,7 @@ const customThemes = {
 
 export function ThemeProvider({ children }: PropsWithChildren) {
   const themePreference = useThemePreference();
+  const prefersDark = useMediaQuery('(prefers-color-scheme: dark)');
 
   const selectedTheme = useMemo(() => {
     const theme =
@@ -69,22 +71,22 @@ export function ThemeProvider({ children }: PropsWithChildren) {
 
       case UiThemeMode.LightAndDark:
         if (themePreference === ThemePreference.UNSPECIFIED) {
-          return getPrefersDark() ? 'dark' : 'light';
+          return prefersDark ? 'dark' : 'light';
         }
 
         return themePreference === ThemePreference.LIGHT ? 'light' : 'dark';
     }
-  }, [themePreference, selectedTheme]);
+  }, [themePreference, selectedTheme, prefersDark]);
 
   const legacyTheme: Theme = useMemo(() => {
-    let theme = themePreferenceToTheme(themePreference);
+    let theme = themePreferenceToTheme(themePreference, prefersDark);
 
     if (customThemes[cfg.customTheme]) {
       theme = customThemes[cfg.customTheme];
     }
 
     return resolveTheme(theme);
-  }, [themePreference]);
+  }, [themePreference, prefersDark]);
 
   return (
     <NewThemeProvider forcedTheme={colorMode} system={selectedTheme.system}>
@@ -129,10 +131,11 @@ function useThemePreference() {
 }
 
 function themePreferenceToTheme(
-  themePreference: ThemePreference
+  themePreference: ThemePreference,
+  prefersDark: boolean
 ): ThemeDefinition {
   if (themePreference === ThemePreference.UNSPECIFIED) {
-    return getPrefersDark() ? darkTheme : lightTheme;
+    return prefersDark ? darkTheme : lightTheme;
   }
   return themePreference === ThemePreference.LIGHT ? lightTheme : darkTheme;
 }
