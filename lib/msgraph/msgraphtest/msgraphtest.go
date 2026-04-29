@@ -441,6 +441,21 @@ func (s *Server) SetGroupMembers(groupID string, members []models.GroupMember) {
 		// should never happen
 		return
 	}
+
+	latestKey := latestDeltaKey(s.Storage.GroupsDelta)
+	deltas := s.Storage.GroupsDelta[latestKey]
+	found := false
+	for i, d := range deltas {
+		if *d.Group.GetID() == groupID {
+			found = true
+			d.Members = append(d.Members, memberDeltas...)
+			deltas[i] = d
+		}
+	}
+	if found {
+		s.Storage.GroupsDelta[latestKey] = deltas
+		return
+	}
 	appendGroupDeltas(s.Storage, models.ListGroupsDeltaResponse{
 		Group: &models.Group{
 			DirectoryObject: models.DirectoryObject{
