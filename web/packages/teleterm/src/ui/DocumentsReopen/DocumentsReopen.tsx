@@ -45,7 +45,7 @@ export function DocumentsReopen(props: {
       trapFocus
       onClose={props.onDiscard}
       dialogCss={() => ({
-        maxWidth: '400px',
+        maxWidth: '450px',
         width: '100%',
       })}
     >

@@ -40,7 +40,7 @@ export function ChangeAccessRequestKind({
       keepInDOMAfterClose
       onClose={onCancel}
       dialogCss={() => ({
-        maxWidth: '400px',
+        maxWidth: '450px',
         width: '100%',
       })}
     >
