@@ -34,6 +34,8 @@ import (
 
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore"
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/policy"
+	"github.com/Azure/azure-sdk-for-go/sdk/azcore/to"
+	"github.com/google/go-cmp/cmp"
 	"github.com/google/uuid"
 	"github.com/jonboulle/clockwork"
 	"github.com/stretchr/testify/assert"
@@ -874,4 +876,283 @@ func newHTTPClient(server *httptest.Server) *http.Client {
 		},
 	}
 	return httpClient
+}
+
+func TestIterateUserDeltas(t *testing.T) {
+	t.Parallel()
+
+	ctx := t.Context()
+	defaultStorage := msgraphtest.NewDefaultStorage()
+	storage := msgraphtest.NewStorage()
+
+	carol := defaultStorage.Users[msgraphtest.CarolID]
+	storage.Users[*carol.ID] = carol
+
+	fakeServer := msgraphtest.NewServer(msgraphtest.WithStorage(storage))
+	t.Cleanup(func() { fakeServer.TLSServer.Close() })
+
+	client, err := NewClient(Config{
+		HTTPClient:    newHTTPClient(fakeServer.TLSServer),
+		TokenProvider: &fakeTokenProvider{},
+		RetryConfig:   &retryConfig,
+	})
+	require.NoError(t, err)
+
+	fakeDeltaStore := msgraphtest.NewFakeDeltaStore()
+
+	const userEndpoint = "users/delta"
+
+	// Request without the latest token should fail.
+	for _, err := range client.IterateUserDeltas(ctx, userEndpoint, fakeDeltaStore) {
+		require.ErrorIs(t, err, ErrMissingDeltaLink)
+	}
+
+	// Set up latest delta token for user endpoint.
+	err = client.SetupLatestDelta(ctx, userEndpoint, fakeDeltaStore)
+	require.NoError(t, err)
+
+	// Subsequent delta requests should now succeed.
+	require.NotEmpty(t, fakeDeltaStore.Get(userEndpoint))
+
+	alice := defaultStorage.Users[msgraphtest.AliceID]
+	bob := defaultStorage.Users[msgraphtest.BobID]
+	fakeServer.SetUsers([]*models.User{alice, bob})
+
+	expected := []*models.ListUsersDeltaResponse{
+		{
+			User: &models.User{
+				DirectoryObject: models.DirectoryObject{
+					ID: alice.GetID(),
+				},
+				Mail:              alice.Mail,
+				UserPrincipalName: alice.UserPrincipalName,
+			},
+		},
+		{
+			User: &models.User{
+				DirectoryObject: models.DirectoryObject{
+					ID: bob.GetID(),
+				},
+				Mail:              bob.Mail,
+				UserPrincipalName: bob.UserPrincipalName,
+			},
+		},
+	}
+
+	// Test new users response.
+	got := []*models.ListUsersDeltaResponse{}
+	for usersDelta, err := range client.IterateUserDeltas(ctx, userEndpoint, fakeDeltaStore) {
+		require.NoError(t, err)
+
+		got = append(got, usersDelta)
+	}
+
+	require.Empty(t, cmp.Diff(expected, got), "expected user delta response to match")
+
+	// Test user delete response
+	expected = []*models.ListUsersDeltaResponse{
+		{
+			User: &models.User{
+				DirectoryObject: models.DirectoryObject{
+					ID: carol.GetID(),
+				},
+			},
+			Removed: &models.RemovedReason{
+				Reason: to.Ptr("deleted"),
+			},
+		},
+	}
+
+	fakeServer.DeleteUsers([]string{*carol.GetID()})
+	got = []*models.ListUsersDeltaResponse{}
+	for usersDelta, err := range client.IterateUserDeltas(ctx, userEndpoint, fakeDeltaStore) {
+		require.NoError(t, err)
+
+		got = append(got, usersDelta)
+	}
+
+	require.Empty(t, cmp.Diff(expected, got), "expected user delta response to match")
+
+}
+
+func TestIterateGroupDeltas(t *testing.T) {
+	t.Parallel()
+
+	ctx := t.Context()
+	defaultStorage := msgraphtest.NewDefaultStorage()
+
+	storage := msgraphtest.NewStorage()
+	// Start with default users alice, bob and carol.
+	storage.Users = defaultStorage.Users
+
+	fakeServer := msgraphtest.NewServer(msgraphtest.WithStorage(storage))
+	t.Cleanup(func() { fakeServer.TLSServer.Close() })
+
+	httpClient := &http.Client{
+		Transport: &msgraphtest.RewriteTransport{
+			Base: fakeServer.TLSServer.Client().Transport,
+			URL:  mustParseURL(t, fakeServer.TLSServer.URL),
+		},
+	}
+
+	client, err := NewClient(Config{
+		HTTPClient:    httpClient,
+		TokenProvider: &fakeTokenProvider{},
+		RetryConfig:   &retryConfig,
+	})
+	require.NoError(t, err)
+
+	fakeDeltaStore := msgraphtest.NewFakeDeltaStore()
+
+	const endpoint = "groups/delta"
+
+	// Request without the latest token should fail.
+	for _, err := range client.IterateGroupDeltas(ctx, endpoint, fakeDeltaStore) {
+		require.ErrorIs(t, err, ErrMissingDeltaLink)
+	}
+
+	// Set up latest delta token for user endpoint.
+	err = client.SetupLatestDelta(ctx, endpoint, fakeDeltaStore, WithSelect("id,displayName,description,members,owners"))
+	require.NoError(t, err)
+
+	require.NotEmpty(t, fakeDeltaStore.Get(endpoint))
+
+	// Create groups
+	group1 := defaultStorage.Groups[msgraphtest.Group1ID]
+	group2 := defaultStorage.Groups[msgraphtest.Group2ID]
+	group3 := defaultStorage.Groups[msgraphtest.Group3ID]
+
+	fakeServer.SetGroups([]*models.Group{group1, group2, group3})
+	// Add user alice and group3 as member
+	alice := storage.Users[msgraphtest.AliceID]
+	fakeServer.SetGroupMembers(*group1.GetID(), []models.GroupMember{alice, group3})
+
+	expected := []*models.ListGroupsDeltaResponse{
+		{
+			Group: &models.Group{
+				DirectoryObject: models.DirectoryObject{
+					ID:          group1.GetID(),
+					DisplayName: group1.DisplayName,
+				},
+				GroupTypes: []string{"security-groups"},
+			},
+			Members: []models.MembersDelta{
+				{
+					DirectoryObject: &models.DirectoryObject{
+						ID: alice.GetID(),
+					},
+					Type: models.ODataUser,
+				},
+				{
+					DirectoryObject: &models.DirectoryObject{
+						ID: group3.GetID(),
+					},
+					Type: models.ODataGroup,
+				},
+			},
+		},
+		{
+			Group: &models.Group{
+				DirectoryObject: models.DirectoryObject{
+					ID:          group2.GetID(),
+					DisplayName: group2.DisplayName,
+				},
+				GroupTypes: []string{"security-groups"},
+			},
+		},
+		{
+			Group: &models.Group{
+				DirectoryObject: models.DirectoryObject{
+					ID:          group3.GetID(),
+					DisplayName: group3.DisplayName,
+				},
+				GroupTypes: []string{"security-groups"},
+			},
+		},
+	}
+
+	got := []*models.ListGroupsDeltaResponse{}
+	// A consequtive request should now succeed
+	for groupDeltas, err := range client.IterateGroupDeltas(ctx, endpoint, fakeDeltaStore) {
+		require.NoError(t, err)
+
+		got = append(got, groupDeltas)
+	}
+
+	require.Empty(t, cmp.Diff(expected, got), "expected group delta response to match")
+
+	fakeServer.DeleteGroups([]string{*group3.GetID()})
+	fakeServer.DeleteUsers([]string{*alice.GetID()})
+	// Add user alice and group3 as member
+	carol := storage.Users[msgraphtest.CarolID]
+	fakeServer.SetGroupOwners(*group1.GetID(), []*models.User{carol})
+
+	expected = []*models.ListGroupsDeltaResponse{
+		{
+			Group: &models.Group{
+				DirectoryObject: models.DirectoryObject{
+					ID:          group1.GetID(),
+					DisplayName: group1.DisplayName,
+				},
+			},
+			Members: []models.MembersDelta{
+				{
+					DirectoryObject: &models.DirectoryObject{
+						ID: group3.GetID(),
+					},
+					Type: models.ODataGroup,
+					Removed: &models.RemovedReason{
+						Reason: to.Ptr("deleted"),
+					},
+				},
+				{
+					DirectoryObject: &models.DirectoryObject{
+						ID: alice.GetID(),
+					},
+					Type: models.ODataUser,
+					Removed: &models.RemovedReason{
+						Reason: to.Ptr("deleted"),
+					},
+				},
+			},
+			Owners: []models.OwnersDelta{
+				{
+					User: &models.User{
+						DirectoryObject: models.DirectoryObject{
+							ID: carol.GetID(),
+						},
+					},
+					Type: models.ODataUser,
+				},
+			},
+		},
+		{
+			Group: &models.Group{
+				DirectoryObject: models.DirectoryObject{
+					ID: group3.GetID(),
+				},
+			},
+			Removed: &models.RemovedReason{
+				Reason: to.Ptr("deleted"),
+			},
+		},
+	}
+
+	got = []*models.ListGroupsDeltaResponse{}
+	// A consequtive request should now succeed
+	for groupDeltas, err := range client.IterateGroupDeltas(ctx, endpoint, fakeDeltaStore) {
+		require.NoError(t, err)
+
+		got = append(got, groupDeltas)
+	}
+
+	require.Empty(t, cmp.Diff(expected, got), "expected group delta response to match")
+}
+
+func mustParseURL(t *testing.T, in string) *url.URL {
+	t.Helper()
+	url, err := url.Parse(in)
+	require.NoError(t, err)
+	require.Equal(t, "https", url.Scheme, "expected URL with https scheme")
+	return url
 }

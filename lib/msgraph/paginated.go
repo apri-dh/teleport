@@ -20,6 +20,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"iter"
 	"log/slog"
 	"net/http"
 	"net/url"
@@ -49,6 +50,12 @@ type iterateConfig struct {
 	// count is the $count query param.
 	// https://learn.microsoft.com/en-us/graph/query-parameters?tabs=http#count
 	count bool
+	// latestDeltaToken indicates to use "latest" string literal
+	// as the delta token. Using "latest" token returns
+	// a latest delta token for the queried delta endpoint.
+	latestDeltaQuery bool
+	// deltaQuery indicates to use delta query.
+	deltaQuery bool
 }
 
 func (ic *iterateConfig) query() url.Values {
@@ -65,6 +72,9 @@ func (ic *iterateConfig) query() url.Values {
 	if ic.count {
 		q.Set("$count", "true")
 	}
+	if ic.latestDeltaQuery {
+		q.Set("$deltatoken", "latest")
+	}
 	return q
 }
 
@@ -77,6 +87,23 @@ func (c *Client) newIterateConfig() *iterateConfig {
 
 // IterateOpt is a function that can be passed to [Client] methods that iterate over API results.
 type IterateOpt func(*iterateConfig)
+
+// WithDeltaQuery sets [iterateConfig.deltaQuery],
+// indicating the client to use Graph API delta query.
+func WithDeltaQuery() IterateOpt {
+	return func(ic *iterateConfig) {
+		ic.deltaQuery = true
+	}
+}
+
+// WithDeltaQuery sets [iterateConfig.latestDeltaQuery],
+// indicating the client to use "latest" string literal value
+// as the delta token in the Graph API delta query.
+func WithLatestDeltaQuery() IterateOpt {
+	return func(ic *iterateConfig) {
+		ic.latestDeltaQuery = true
+	}
+}
 
 // WithFilter sets the $filter query param.
 // https://learn.microsoft.com/en-us/graph/filter-query-parameter?tabs=http
@@ -212,6 +239,165 @@ func (c *Client) IterateGroups(ctx context.Context, f func(*models.Group) bool, 
 // Ref: [https://learn.microsoft.com/en-us/graph/api/user-list].
 func (c *Client) IterateUsers(ctx context.Context, f func(*models.User) bool, opts ...IterateOpt) error {
 	return iterateSimple(c, ctx, "users", f, opts...)
+}
+
+// iterateSeq implements pagination for "list" endpoints and yields pages as a sequence.
+func (c *Client) iterateSeq(ctx context.Context, endpoint string, ds DeltaStore, iterateOpts ...IterateOpt) iter.Seq2[json.RawMessage, error] {
+	ic := c.newIterateConfig()
+	for _, opt := range iterateOpts {
+		opt(ic)
+	}
+
+	var uriString string
+	if ic.deltaQuery {
+		deltaURI := ds.Get(endpoint)
+		if deltaURI == "" {
+			return func(yield func(json.RawMessage, error) bool) {
+				yield(nil, trace.Wrap(ErrMissingDeltaLink))
+			}
+		}
+		uriString = deltaURI
+	}
+	if uriString == "" {
+		uri := *c.baseURL
+		uri.Path = path.Join(uri.Path, endpoint)
+		uri.RawQuery = ic.query().Encode()
+		uriString = uri.String()
+	}
+	return func(yield func(json.RawMessage, error) bool) {
+		var deltaLink string
+
+		for uriString != "" {
+			resp, err := c.request(ctx, http.MethodGet, uriString, ic.header, nil /* payload */)
+			if err != nil {
+				yield(nil, trace.Wrap(err))
+				return
+			}
+
+			var page models.ODataPage
+			if err := jsoniter.ConfigFastest.NewDecoder(resp.Body).Decode(&page); err != nil {
+				resp.Body.Close()
+				yield(nil, trace.Wrap(err))
+				return
+			}
+
+			resp.Body.Close()
+			uriString = page.NextLink
+
+			if page.DeltaLink != "" {
+				deltaLink = page.DeltaLink
+			}
+
+			if !yield(page.Value, nil) {
+				return
+			}
+		}
+
+		if deltaLink != "" {
+			ds.Set(endpoint, deltaLink)
+		}
+	}
+}
+
+// IterateUsersDelta. If the delta cache is empty,
+// returns error if delta cache is empty, suggesting
+// to start with a full scan which sets up latest
+// delta token.
+func (c *Client) IterateUserDeltas(
+	ctx context.Context,
+	endpoint string,
+	ds DeltaStore,
+	opts ...IterateOpt,
+) iter.Seq2[*models.ListUsersDeltaResponse, error] {
+	opts = append(opts, WithDeltaQuery())
+	return func(yield func(*models.ListUsersDeltaResponse, error) bool) {
+		for msg, iterErr := range c.iterateSeq(ctx, endpoint, ds, opts...) {
+			if iterErr != nil {
+				yield(nil, trace.Wrap(iterErr))
+				return
+			}
+			var page []*models.ListUsersDeltaResponse
+			if err := utils.FastUnmarshal(msg, &page); err != nil {
+				yield(nil, trace.Wrap(err))
+				return
+			}
+			for _, item := range page {
+				if !yield(item, nil) {
+					return
+				}
+			}
+		}
+	}
+}
+
+// IterateGroupsDelta. If the delta cache is empty,
+// returns error if delta cache is empty, suggesting
+// to start with a full scan which sets up latest
+// delta token.
+func (c *Client) IterateGroupDeltas(
+	ctx context.Context,
+	endpoint string,
+	ds DeltaStore,
+	opts ...IterateOpt,
+) iter.Seq2[*models.ListGroupsDeltaResponse, error] {
+	opts = append(opts, WithDeltaQuery())
+	return func(yield func(*models.ListGroupsDeltaResponse, error) bool) {
+		for msg, iterErr := range c.iterateSeq(ctx, endpoint, ds, opts...) {
+			if iterErr != nil {
+				yield(nil, trace.Wrap(iterErr))
+				return
+			}
+			var page []*models.ListGroupsDeltaResponse
+			if err := utils.FastUnmarshal(msg, &page); err != nil {
+				yield(nil, trace.Wrap(err))
+				return
+			}
+			for _, item := range page {
+				item.Members = filterUnsupportedGroupMembers(item.Members)
+				if !yield(item, nil) {
+					return
+				}
+			}
+		}
+	}
+}
+
+// SetupLatestDelta configures latest delta token for the given endpoint.
+// Should always be called before iterating over user and group delta API.
+func (c *Client) SetupLatestDelta(ctx context.Context, endpoint string, ds DeltaStore, opts ...IterateOpt) error {
+	opts = append(opts, WithLatestDeltaQuery())
+
+	// only a single page with a new delta link is expected.
+	for _, err := range c.iterateSeq(ctx, endpoint, ds, opts...) {
+		if err != nil {
+			return trace.Wrap(err, "setting up user latest delta token")
+		}
+	}
+
+	return nil
+}
+
+func filterUnsupportedGroupMembers(in []models.MembersDelta) []models.MembersDelta {
+	if in == nil {
+		return nil
+	}
+	out := make([]models.MembersDelta, 0, len(in))
+	for _, member := range in {
+		switch member.Type {
+		case models.ODataUser, models.ODataGroup:
+			out = append(out, models.MembersDelta{
+				DirectoryObject: &models.DirectoryObject{
+					ID:          member.ID,
+					DisplayName: member.DisplayName,
+				},
+				Type:    member.Type,
+				Removed: member.Removed,
+			})
+		default:
+			// members such as #microsoft.graph.device are discarded.
+		}
+	}
+	return out
 }
 
 // IterateServicePrincipals lists all service principals in the Entra ID directory using pagination.
