@@ -22,6 +22,7 @@ import styled, { useTheme } from 'styled-components';
 
 import { Box, Flex, rotate360 } from 'design';
 import * as icons from 'design/Icon';
+import { Theme } from 'design/theme';
 import { decomposeColor, emphasize } from 'design/theme/utils/colorManipulator';
 import { AttemptStatus } from 'shared/hooks/useAsync';
 
@@ -149,7 +150,7 @@ function PhaseIcon({ status }: { status: AttemptStatus }): JSX.Element {
   );
 }
 
-function getPhaseSolidColor(theme: any): string {
+function getPhaseSolidColor(theme: Theme): string {
   const alpha =
     decomposeColor(resolveThemeToColors(theme.colors.spotBackground[1]))
       .values[3] || 0;
