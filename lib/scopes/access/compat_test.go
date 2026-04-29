@@ -22,6 +22,8 @@ import (
 	"github.com/google/go-cmp/cmp"
 	"github.com/stretchr/testify/require"
 
+	"github.com/gravitational/teleport/api/constants"
+	apidefaults "github.com/gravitational/teleport/api/defaults"
 	headerv1 "github.com/gravitational/teleport/api/gen/proto/go/teleport/header/v1"
 	labelv1 "github.com/gravitational/teleport/api/gen/proto/go/teleport/label/v1"
 	scopedaccessv1 "github.com/gravitational/teleport/api/gen/proto/go/teleport/scopes/access/v1"
@@ -325,6 +327,41 @@ func TestSSHFileCopyNotInClassicRole(t *testing.T) {
 	role, err := ScopedRoleToRole(sr, "/foo/bar")
 	require.NoError(t, err)
 	require.Equal(t, types.NewBoolOption(true), role.GetOptions().SSHFileCopy)
+}
+
+func TestEnhancedRecordingNotInClassicRole(t *testing.T) {
+	t.Parallel()
+
+	boolPtr := func(v bool) *bool { return &v }
+	sr := baseScopedRole()
+	sr.Spec.Ssh.EnhancedRecording = &scopedaccessv1.EnhancedRecording{
+		Command: boolPtr(true),
+		Network: boolPtr(true),
+		Disk:    boolPtr(true),
+	}
+
+	role, err := ScopedRoleToRole(sr, "/foo/bar")
+	require.NoError(t, err)
+	// BPF is the classic role equivalent of enhanced_recording.
+	require.Equal(t, apidefaults.EnhancedEvents(), role.GetOptions().BPF)
+}
+
+func TestSessionRecordingNotInClassicRole(t *testing.T) {
+	t.Parallel()
+
+	boolPtr := func(v bool) *bool { return &v }
+	sr := baseScopedRole()
+	sr.Spec.Ssh.SessionRecordingMode = &scopedaccessv1.SessionRecording{
+		Strict: boolPtr(true),
+	}
+
+	role, err := ScopedRoleToRole(sr, "/foo/bar")
+	require.NoError(t, err)
+	// RecordSession is the classic role equivalent of session_recording_mode.
+	require.Equal(t, &types.RecordSession{
+		Desktop: types.NewBoolOption(true),
+		Default: constants.SessionRecordingModeBestEffort,
+	}, role.GetOptions().RecordSession)
 }
 
 // TestKubeConversion verifies the various kube-related scoped role conversion scenarios.

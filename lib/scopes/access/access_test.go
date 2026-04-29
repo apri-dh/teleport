@@ -25,7 +25,6 @@ import (
 	"google.golang.org/protobuf/proto"
 	"google.golang.org/protobuf/reflect/protoreflect"
 
-	"github.com/gravitational/teleport/api/constants"
 	headerv1 "github.com/gravitational/teleport/api/gen/proto/go/teleport/header/v1"
 	labelv1 "github.com/gravitational/teleport/api/gen/proto/go/teleport/label/v1"
 	scopedaccessv1 "github.com/gravitational/teleport/api/gen/proto/go/teleport/scopes/access/v1"
@@ -388,74 +387,6 @@ func TestValidateRole(t *testing.T) {
 					AssignableScopes: []string{"/foo"},
 					Ssh: &scopedaccessv1.ScopedRoleSSH{
 						MaxSessions: proto.Int64(1),
-					},
-				},
-				Version: types.V1,
-			},
-			strongOk: true,
-			weakOk:   true,
-		},
-		{
-			name: "invalid defaults.session_recording_mode",
-			role: &scopedaccessv1.ScopedRole{
-				Kind:     KindScopedRole,
-				Metadata: &headerv1.Metadata{Name: "test"},
-				Scope:    "/",
-				Spec: &scopedaccessv1.ScopedRoleSpec{
-					AssignableScopes: []string{"/foo"},
-					Defaults: &scopedaccessv1.ScopedRoleDefaults{
-						SessionRecordingMode: "bogus",
-					},
-				},
-				Version: types.V1,
-			},
-			strongOk: false,
-			weakOk:   true,
-		},
-		{
-			name: "valid defaults.session_recording_mode",
-			role: &scopedaccessv1.ScopedRole{
-				Kind:     KindScopedRole,
-				Metadata: &headerv1.Metadata{Name: "test"},
-				Scope:    "/",
-				Spec: &scopedaccessv1.ScopedRoleSpec{
-					AssignableScopes: []string{"/foo"},
-					Defaults: &scopedaccessv1.ScopedRoleDefaults{
-						SessionRecordingMode: string(constants.SessionRecordingModeBestEffort),
-					},
-				},
-				Version: types.V1,
-			},
-			strongOk: true,
-			weakOk:   true,
-		},
-		{
-			name: "invalid ssh.session_recording_mode",
-			role: &scopedaccessv1.ScopedRole{
-				Kind:     KindScopedRole,
-				Metadata: &headerv1.Metadata{Name: "test"},
-				Scope:    "/",
-				Spec: &scopedaccessv1.ScopedRoleSpec{
-					AssignableScopes: []string{"/foo"},
-					Ssh: &scopedaccessv1.ScopedRoleSSH{
-						SessionRecordingMode: "bogus",
-					},
-				},
-				Version: types.V1,
-			},
-			strongOk: false,
-			weakOk:   true,
-		},
-		{
-			name: "valid ssh.session_recording_mode",
-			role: &scopedaccessv1.ScopedRole{
-				Kind:     KindScopedRole,
-				Metadata: &headerv1.Metadata{Name: "test"},
-				Scope:    "/",
-				Spec: &scopedaccessv1.ScopedRoleSpec{
-					AssignableScopes: []string{"/foo"},
-					Ssh: &scopedaccessv1.ScopedRoleSSH{
-						SessionRecordingMode: string(constants.SessionRecordingModeStrict),
 					},
 				},
 				Version: types.V1,
@@ -1285,8 +1216,10 @@ func TestStrongValidateRoleSpecAllFieldsValidated(t *testing.T) {
 	spec := &scopedaccessv1.ScopedRoleSpec{
 		AssignableScopes: []string{"/foo"},
 		Defaults: &scopedaccessv1.ScopedRoleDefaults{
-			ClientIdleTimeout:    "30m",
-			SessionRecordingMode: string(constants.SessionRecordingModeStrict),
+			ClientIdleTimeout: "30m",
+			SessionRecordingMode: &scopedaccessv1.SessionRecording{
+				Strict: proto.Bool(true),
+			},
 		},
 		Rules: []*scopedaccessv1.ScopedRule{
 			{
@@ -1312,10 +1245,16 @@ func TestStrongValidateRoleSpecAllFieldsValidated(t *testing.T) {
 				Groups: []string{"wheel"},
 				Shell:  "/bin/bash",
 			},
-			HostSudoers:          []string{"ALL=(ALL) NOPASSWD:ALL"},
-			MaxSessions:          proto.Int64(10),
-			EnhancedRecording:    []string{"command", "network"},
-			SessionRecordingMode: string(constants.SessionRecordingModeStrict),
+			HostSudoers: []string{"ALL=(ALL) NOPASSWD:ALL"},
+			MaxSessions: proto.Int64(10),
+			EnhancedRecording: &scopedaccessv1.EnhancedRecording{
+				Disk:    proto.Bool(true),
+				Network: proto.Bool(true),
+				Command: proto.Bool(true),
+			},
+			SessionRecordingMode: &scopedaccessv1.SessionRecording{
+				Strict: proto.Bool(true),
+			},
 		},
 		Kube: &scopedaccessv1.ScopedRoleKube{
 			Groups: []string{"viewer"},

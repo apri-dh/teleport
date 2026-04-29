@@ -86,11 +86,9 @@ message ScopedRoleDefaults {
   // that do not specify their own value. Must be a valid Go duration string (e.g. "30m", "1h").
   string client_idle_timeout = 1;
 
-  // SessionRecordingMode configures the session recording strategy for access sessions
-  // across all protocols that do not specify their own value. Valid values are "strict"
-  // and "best_effort". If empty, defaults to "best_effort". A value set in a
-  // protocol-specific block (e.g. ssh.session_recording_mode) takes precedence.
-  string session_recording_mode = 4;
+  // SessionRecordingMode configures the session recording strategy for all protocols that don't
+  // explicitly set their session recording mode.
+  SessionRecording session_recording_mode = 2;
 }
 
 // ScopedRoleSSH groups all scoped role fields relevant to SSH access. Fields within the SSH block
@@ -133,13 +131,11 @@ message ScopedRoleSSH {
   // over an SSH session. It defaults to allowing the user to download and upload files by default.
   optional bool file_copy = 11;
 
-  // EnhancedRecording is the list of BPF events to record for enhanced session recording.
-  repeated string enhanced_recording = 12;
+  // EnhancedRecording is the set of BPF events to record for enhanced session recording.
+  EnhancedRecording enhanced_recording = 12;
 
   // SessionRecordingMode configures the session recording strategy for SSH sessions.
-  // Valid values are "strict" and "best_effort". If empty, defers to the defaults block
-  // (or "best_effort" if unset there).
-  string session_recording_mode = 13;
+  SessionRecording session_recording_mode = 13;
 }
 
 // The group of all scoped role fields relevant to kube access. Fields within the kube block
@@ -203,4 +199,21 @@ message CreateHostUser {
 
   // Shell is the shell to set for the user.
   string shell = 3;
+}
+
+// EnhancedRecording enables what events to record for the BPF-based session recorder.
+message EnhancedRecording {
+  // Command enables session.command in audit logs
+  optional bool command = 1;
+  // Network enables session.network in audit logs
+  optional bool network = 2;
+  // Disk enables session.disk in audit logs
+  optional bool disk = 3;
+}
+
+// SessionRecording sets the session recording behavior.
+message SessionRecording {
+  // Strict: if true, any failure to record a session will terminate it. If unset or false, failures
+  // are best-effort and the session continues with recording disabled.
+  optional bool strict = 1;
 }

@@ -523,7 +523,9 @@ func TestSSHAccessCheckerSessionRecordingMode(t *testing.T) {
 			name: "ssh strict",
 			spec: &scopedaccessv1.ScopedRoleSpec{
 				Ssh: &scopedaccessv1.ScopedRoleSSH{
-					SessionRecordingMode: string(constants.SessionRecordingModeStrict),
+					SessionRecordingMode: &scopedaccessv1.SessionRecording{
+						Strict: ptr(true),
+					},
 				},
 			},
 			expect: constants.SessionRecordingModeStrict,
@@ -532,7 +534,9 @@ func TestSSHAccessCheckerSessionRecordingMode(t *testing.T) {
 			name: "defaults used when ssh unset",
 			spec: &scopedaccessv1.ScopedRoleSpec{
 				Defaults: &scopedaccessv1.ScopedRoleDefaults{
-					SessionRecordingMode: string(constants.SessionRecordingModeStrict),
+					SessionRecordingMode: &scopedaccessv1.SessionRecording{
+						Strict: ptr(true),
+					},
 				},
 			},
 			expect: constants.SessionRecordingModeStrict,
@@ -541,10 +545,14 @@ func TestSSHAccessCheckerSessionRecordingMode(t *testing.T) {
 			name: "ssh overrides defaults",
 			spec: &scopedaccessv1.ScopedRoleSpec{
 				Defaults: &scopedaccessv1.ScopedRoleDefaults{
-					SessionRecordingMode: string(constants.SessionRecordingModeStrict),
+					SessionRecordingMode: &scopedaccessv1.SessionRecording{
+						Strict: ptr(true),
+					},
 				},
 				Ssh: &scopedaccessv1.ScopedRoleSSH{
-					SessionRecordingMode: string(constants.SessionRecordingModeBestEffort),
+					SessionRecordingMode: &scopedaccessv1.SessionRecording{
+						Strict: ptr(false),
+					},
 				},
 			},
 			expect: constants.SessionRecordingModeBestEffort,
@@ -575,16 +583,20 @@ func TestSSHAccessCheckerEnhancedRecording(t *testing.T) {
 					EnhancedRecording: nil,
 				},
 			},
-			expect: nil,
+			expect: map[string]bool{},
 		},
 		{
 			name: "has events",
 			spec: &scopedaccessv1.ScopedRoleSpec{
 				Ssh: &scopedaccessv1.ScopedRoleSSH{
-					EnhancedRecording: []string{"command", "network"},
+					EnhancedRecording: &scopedaccessv1.EnhancedRecording{
+						Network: ptr(true),
+						Command: ptr(true),
+						Disk:    ptr(true),
+					},
 				},
 			},
-			expect: map[string]bool{"command": true, "network": true},
+			expect: map[string]bool{"command": true, "network": true, "disk": true},
 		},
 	}
 

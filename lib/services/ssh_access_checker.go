@@ -88,16 +88,17 @@ func (c *SSHAccessChecker) AdjustDisconnectExpiredCert(disconnect bool) bool {
 }
 
 // SessionRecordingMode returns the session recording mode for SSH sessions.
-// For scoped roles, resolution is ssh.session_recording_mode > defaults.session_recording_mode > best_effort.
+// SSH recording mode takes precedence over the defaults
 func (c *SSHAccessChecker) SessionRecordingMode() constants.SessionRecordingMode {
 	if !c.checker.isScoped() {
 		return c.checker.unscopedChecker.SessionRecordingMode(constants.SessionRecordingServiceSSH)
 	}
-	if mode := c.checker.role.GetSpec().GetSsh().GetSessionRecordingMode(); mode != "" {
-		return constants.SessionRecordingMode(mode)
+	mode := c.checker.role.GetSpec().GetSsh().GetSessionRecordingMode()
+	if mode == nil {
+		mode = c.checker.role.GetSpec().GetDefaults().GetSessionRecordingMode()
 	}
-	if mode := c.checker.role.GetSpec().GetDefaults().GetSessionRecordingMode(); mode != "" {
-		return constants.SessionRecordingMode(mode)
+	if mode.GetStrict() {
+		return constants.SessionRecordingModeStrict
 	}
 	return constants.SessionRecordingModeBestEffort
 }
@@ -170,12 +171,16 @@ func (c *SSHAccessChecker) EnhancedRecordingSet() map[string]bool {
 		return c.checker.unscopedChecker.EnhancedRecordingSet()
 	}
 	events := c.checker.role.GetSpec().GetSsh().GetEnhancedRecording()
-	if len(events) == 0 {
-		return nil
+	m := make(map[string]bool)
+	if events.GetCommand() {
+		m[constants.EnhancedRecordingCommand] = true
 	}
-	m := make(map[string]bool, len(events))
-	for _, e := range events {
-		m[e] = true
+	if events.GetDisk() {
+		m[constants.EnhancedRecordingDisk] = true
+	}
+	if events.GetNetwork() {
+		m[constants.EnhancedRecordingNetwork] = true
+
 	}
 	return m
 }
